@@ -13,6 +13,8 @@ import {
   mockCreditScores,
   mockHighDemandProducts,
   mockForecastData,
+  mockMonthlySales,
+  mockDailySales,
   simulateDelay,
   calculateExpiryStatus
 } from '../data/mockData';
@@ -252,6 +254,14 @@ export const mockBookingsAPI = {
     orders[id].push(newOrder);
     orders.admin.push(newOrder);
     
+    // Reduce product quantity (inventory)
+    userCart.forEach(item => {
+      const productIndex = products.findIndex(p => p.id === item.product_id);
+      if (productIndex !== -1) {
+        products[productIndex].quantity = Math.max(0, products[productIndex].quantity - item.quantity);
+      }
+    });
+    
     // Clear cart
     cartItems[id] = [];
     
@@ -387,6 +397,44 @@ export const mockAdminAPI = {
       throw { response: { data: { message: 'Product not found' } } };
     }
     return { data: { ...mockForecastData, product_name: product.name } };
+  },
+
+  // Sales Reports
+  getMonthlySales: async (role) => {
+    await simulateDelay(300);
+    // Transform to include month name, revenue, orders, and growth
+    const monthly_sales = mockMonthlySales.map((m, index) => ({
+      month: `${m.month} ${m.year}`,
+      revenue: m.totalSales,
+      orders: m.orderCount,
+      growth: index === 0 ? 0 : ((m.totalSales - mockMonthlySales[index - 1].totalSales) / mockMonthlySales[index - 1].totalSales) * 100
+    }));
+    return { data: { monthly_sales } };
+  },
+
+  getDailySales: async (role) => {
+    await simulateDelay(300);
+    // Transform daily sales data - mockDailySales uses 'sales' not 'totalSales'
+    const daily_sales = mockDailySales.slice(-7).map(d => ({
+      date: d.date,
+      revenue: d.sales,
+      orders: d.orders
+    }));
+    return { data: { daily_sales } };
+  },
+
+  getSalesSummary: async (role) => {
+    await simulateDelay(200);
+    const totalRevenueAllTime = mockMonthlySales.reduce((sum, m) => sum + m.totalSales, 0);
+    const totalOrdersThisMonth = mockMonthlySales.reduce((sum, m) => sum + m.orderCount, 0);
+    const totalRevenueThisMonth = mockMonthlySales[mockMonthlySales.length - 1]?.totalSales || 0;
+    const avgOrderValue = totalRevenueAllTime / totalOrdersThisMonth;
+    return { data: { 
+      total_revenue_this_month: totalRevenueThisMonth,
+      total_orders_this_month: totalOrdersThisMonth,
+      total_revenue_all_time: totalRevenueAllTime,
+      avg_order_value: avgOrderValue
+    }};
   }
 };
 
@@ -446,6 +494,17 @@ export const createMockAxios = () => {
       }
       if (url === '/admin/recommendations/high-demand' || url === '/api/admin/recommendations/high-demand' || url === 'http://localhost:5000/api/admin/recommendations/high-demand') {
         return mockAdminAPI.getHighDemandRecommendations(headers['Role']);
+      }
+      
+      // Sales Reports
+      if (url === '/admin/reports/monthly-sales' || url === '/api/admin/reports/monthly-sales' || url === 'http://localhost:5000/api/admin/reports/monthly-sales') {
+        return mockAdminAPI.getMonthlySales(headers['Role']);
+      }
+      if (url === '/admin/reports/daily-sales' || url === '/api/admin/reports/daily-sales' || url === 'http://localhost:5000/api/admin/reports/daily-sales') {
+        return mockAdminAPI.getDailySales(headers['Role']);
+      }
+      if (url === '/admin/reports/summary' || url === '/api/admin/reports/summary' || url === 'http://localhost:5000/api/admin/reports/summary') {
+        return mockAdminAPI.getSalesSummary(headers['Role']);
       }
       
       // Forecast

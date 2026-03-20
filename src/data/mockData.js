@@ -317,6 +317,32 @@ export const mockHighDemandProducts = [
   { product_id: 1, product_name: 'Urea (Nitrogen Fertilizer) - 50kg', units_sold_last_30_days: 25, demand_level: 'medium', recommended_action: 'Maintain current stock levels' }
 ];
 
+// Mock Monthly Sales Reports
+export const mockMonthlySales = [
+  { month: 'January', year: 2026, totalSales: 125000, orderCount: 45, topProduct: 'Urea (Nitrogen Fertilizer) - 50kg', customers: 12 },
+  { month: 'February', year: 2026, totalSales: 98000, orderCount: 38, topProduct: 'DAP (Di-Ammonium Phosphate) - 50kg', customers: 10 },
+  { month: 'March', year: 2026, totalSales: 156000, orderCount: 52, topProduct: 'NPK 19-19-19 - 50kg', customers: 15 }
+];
+
+// Mock Daily Sales for current month
+export const mockDailySales = [
+  { date: '2026-03-01', sales: 4500, orders: 2 },
+  { date: '2026-03-02', sales: 8200, orders: 4 },
+  { date: '2026-03-03', sales: 3200, orders: 1 },
+  { date: '2026-03-04', sales: 12500, orders: 6 },
+  { date: '2026-03-05', sales: 9800, orders: 5 },
+  { date: '2026-03-06', sales: 15000, orders: 7 },
+  { date: '2026-03-07', sales: 6700, orders: 3 },
+  { date: '2026-03-08', sales: 4200, orders: 2 },
+  { date: '2026-03-09', sales: 8900, orders: 4 },
+  { date: '2026-03-10', sales: 11200, orders: 5 },
+  { date: '2026-03-11', sales: 7600, orders: 3 },
+  { date: '2026-03-12', sales: 13400, orders: 6 },
+  { date: '2026-03-13', sales: 5400, orders: 2 },
+  { date: '2026-03-14', sales: 9200, orders: 4 },
+  { date: '2026-03-15', sales: 16800, orders: 8 }
+];
+
 // Mock Forecast Data
 export const mockForecastData = {
   product_name: 'Potash (Muriate of Potash) - 50kg',

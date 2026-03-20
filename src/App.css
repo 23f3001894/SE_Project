@@ -444,6 +444,87 @@
   padding: 12px 24px;
 }
 
+/* Sales Reports Section */
+.sales-reports-section {
+  margin-top: 30px;
+  padding: 20px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+}
+
+.sales-reports-section h2 {
+  margin-bottom: 20px;
+  color: #2c3e50;
+}
+
+.sales-reports-section h3 {
+  margin-top: 20px;
+  margin-bottom: 15px;
+  color: #495057;
+}
+
+.sales-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 25px;
+}
+
+.sales-summary-cards .stat-card {
+  background: white;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  text-align: center;
+}
+
+.sales-summary-cards .stat-card h3 {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.sales-summary-cards .stat-card p {
+  font-size: 24px;
+  font-weight: bold;
+  color: #2c3e50;
+  margin: 0;
+}
+
+.sales-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-top: 15px;
+}
+
+.sales-table th,
+.sales-table td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+}
+
+.sales-table th {
+  background-color: #2c3e50;
+  color: white;
+  font-weight: 600;
+}
+
+.sales-table tr:hover {
+  background-color: #f8f9fa;
+}
+
+.sales-table .positive {
+  color: #27ae60;
+}
+
+.sales-table .negative {
+  color: #e74c3c;
+}
+
 /* Modal Styles */
 .modal-overlay {
   position: fixed;
