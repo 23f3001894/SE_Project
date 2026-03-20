@@ -12,6 +12,9 @@ const AdminDashboard = () => {
   const [topCustomers, setTopCustomers] = useState([]);
   const [recentOrders, setRecentOrders] = useState([]);
   const [creditScores, setCreditScores] = useState([]);
+  const [monthlySales, setMonthlySales] = useState([]);
+  const [dailySales, setDailySales] = useState([]);
+  const [salesSummary, setSalesSummary] = useState({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -23,7 +26,7 @@ const AdminDashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
-      const [statsRes, expiringRes, expiredRes, topCustomersRes, ordersRes, creditRes] = await Promise.all([
+      const [statsRes, expiringRes, expiredRes, topCustomersRes, ordersRes, creditRes, monthlyRes, dailyRes, summaryRes] = await Promise.all([
         api.get('/admin/dashboard/stats', {
           headers: { 'Role': 'admin' }
         }),
@@ -41,6 +44,15 @@ const AdminDashboard = () => {
         }),
         api.get('/admin/customers/credit-scores', {
           headers: { 'Role': 'admin' }
+        }),
+        api.get('/admin/reports/monthly-sales', {
+          headers: { 'Role': 'admin' }
+        }),
+        api.get('/admin/reports/daily-sales', {
+          headers: { 'Role': 'admin' }
+        }),
+        api.get('/admin/reports/summary', {
+          headers: { 'Role': 'admin' }
         })
       ]);
       
@@ -51,6 +63,9 @@ const AdminDashboard = () => {
       // Get only the 5 most recent orders
       setRecentOrders(ordersRes.data.bookings?.slice(0, 5) || []);
       setCreditScores(creditRes.data.customers || []);
+      setMonthlySales(monthlyRes.data.monthly_sales || []);
+      setDailySales(dailyRes.data.daily_sales || []);
+      setSalesSummary(summaryRes.data || {});
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
     } finally {
@@ -178,6 +193,85 @@ const AdminDashboard = () => {
         <Link to="/products" className="btn">Manage Products</Link>
         <Link to="/orders" className="btn">View All Orders</Link>
         <Link to="/forecasting" className="btn">📊 Forecasting & Analytics</Link>
+      </div>
+      
+      <div className="sales-reports-section">
+        <h2>Sales Reports</h2>
+        
+        <div className="sales-summary-cards">
+          <div className="stat-card">
+            <h3>Total Revenue (This Month)</h3>
+            <p>₹{salesSummary.total_revenue_this_month?.toFixed(2) || '0.00'}</p>
+          </div>
+          <div className="stat-card">
+            <h3>Total Orders (This Month)</h3>
+            <p>{salesSummary.total_orders_this_month || 0}</p>
+          </div>
+          <div className="stat-card">
+            <h3>Average Order Value</h3>
+            <p>₹{salesSummary.avg_order_value?.toFixed(2) || '0.00'}</p>
+          </div>
+          <div className="stat-card">
+            <h3>Total Revenue (All Time)</h3>
+            <p>₹{salesSummary.total_revenue_all_time?.toFixed(2) || '0.00'}</p>
+          </div>
+        </div>
+        
+        <div className="section">
+          <h3>Monthly Sales Report</h3>
+          {monthlySales.length === 0 ? (
+            <p>No monthly sales data available.</p>
+          ) : (
+            <table className="sales-table">
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  <th>Orders</th>
+                  <th>Revenue</th>
+                  <th>Growth %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthlySales.map(sale => (
+                  <tr key={sale.month}>
+                    <td>{sale.month}</td>
+                    <td>{sale.orders}</td>
+                    <td>₹{sale.revenue.toFixed(2)}</td>
+                    <td className={sale.growth >= 0 ? 'positive' : 'negative'}>
+                      {sale.growth >= 0 ? '↑' : '↓'} {Math.abs(sale.growth).toFixed(1)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        
+        <div className="section">
+          <h3>Daily Sales (Last 7 Days)</h3>
+          {dailySales.length === 0 ? (
+            <p>No daily sales data available.</p>
+          ) : (
+            <table className="sales-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Orders</th>
+                  <th>Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dailySales.map(sale => (
+                  <tr key={sale.date}>
+                    <td>{sale.date}</td>
+                    <td>{sale.orders}</td>
+                    <td>₹{sale.revenue.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
     </div>
     </>
