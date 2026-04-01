@@ -43,7 +43,7 @@ const ProductList = () => {
         { product_id: productId, quantity },
         {
           headers: {
-            'User-ID': user.id,
+            'User-Id': user.user_id,
             'Role': user.role
           }
         }
@@ -59,8 +59,12 @@ const ProductList = () => {
       return;
     }
     try {
+      const user = JSON.parse(localStorage.getItem('user'));
       await api.delete(`/products/${productId}`, {
-        headers: { 'Role': 'admin' }
+        headers: { 
+          'Role': 'admin',
+          'User-Id': user.user_id
+        }
       });
       // Remove from list
       setProducts(prev => prev.filter(p => p.id !== productId));

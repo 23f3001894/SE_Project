@@ -26,7 +26,7 @@ const CartPage = () => {
     try {
       const response = await api.get('/cart/', {
         headers: {
-          'User-ID': user.id,
+          'User-Id': user.user_id,
           'Role': user.role
         }
       });
@@ -47,13 +47,13 @@ const CartPage = () => {
     try {
       const response = await api.get('/addresses/', {
         headers: {
-          'User-ID': user.id,
+          'User-Id': user.user_id,
           'Role': user.role
         }
       });
       setAddresses(response.data.addresses);
       if (response.data.addresses.length > 0) {
-        setSelectedAddress(response.data.addresses[0].id.toString());
+        setSelectedAddress(response.data.addresses[0].address_id?.toString() || response.data.addresses[0].id?.toString() || '');
       }
     } catch (err) {
       console.error('Error fetching addresses:', err);
@@ -68,7 +68,7 @@ const CartPage = () => {
         { quantity },
         {
           headers: {
-            'User-ID': user.id,
+            'User-Id': user.user_id,
             'Role': user.role
           }
         }
@@ -85,7 +85,7 @@ const CartPage = () => {
     try {
       await api.delete(`/cart/remove/${cartItemId}`, {
         headers: {
-          'User-ID': user.id,
+          'User-Id': user.user_id,
           'Role': user.role
         }
       });
@@ -116,7 +116,7 @@ const CartPage = () => {
         },
         {
           headers: {
-            'User-ID': user.id,
+            'User-Id': user.user_id,
             'Role': user.role
           }
         }

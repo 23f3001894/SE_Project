@@ -40,7 +40,7 @@ const AdminDashboard = () => {
           headers: { 'Role': 'admin' }
         }),
         api.get('/bookings/history', {
-          headers: { 'Role': 'admin', 'User-ID': user?.id }
+          headers: { 'Role': 'admin', 'User-Id': user?.user_id }
         }),
         api.get('/admin/customers/credit-scores', {
           headers: { 'Role': 'admin' }

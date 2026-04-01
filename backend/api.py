@@ -13,7 +13,7 @@ import os
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*", "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"], "allow_headers": "*"}}, supports_credentials=True)
 
 # Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///agriflow.db'
@@ -304,7 +304,10 @@ def require_auth(f):
         user_id, role = get_user_from_request()
         if not user_id:
             return jsonify({'message': 'Authentication required'}), 401
-        return f(user_id, role, *args, **kwargs)
+        # Pass user_id and role as keyword arguments to avoid conflict with URL params
+        kwargs['user_id'] = user_id
+        kwargs['role'] = role
+        return f(*args, **kwargs)
     return decorated
 
 
@@ -317,9 +320,21 @@ def require_admin(f):
             return jsonify({'message': 'Authentication required'}), 401
         if role != 'admin':
             return jsonify({'message': 'Admin access required'}), 403
-        return f(user_id, role, *args, **kwargs)
+        # Pass user_id and role as keyword arguments to avoid conflict with URL params
+        kwargs['user_id'] = user_id
+        kwargs['role'] = role
+        return f(*args, **kwargs)
     return decorated
 
+
+# =============================================================================
+# CORS PREFLIGHT HANDLER
+# =============================================================================
+
+@app.route('/api/<path:path>', methods=['OPTIONS'])
+def handle_options(path):
+    """Handle OPTIONS preflight requests for CORS"""
+    return '', 204
 
 # =============================================================================
 # AUTH ENDPOINTS
@@ -477,6 +492,19 @@ def delete_product(product_id, user_id, role):
     if not product:
         return jsonify({'message': 'Product not found'}), 404
 
+    # Delete related records first (reviews, cart items, booking items)
+    # These are defined in this file, no import needed
+    
+    # Delete reviews for this product
+    Reviews.query.filter_by(product_id=product_id).delete()
+    
+    # Delete cart items for this product
+    CartItems.query.filter_by(product_id=product_id).delete()
+    
+    # Delete booking items for this product (just the links, not the bookings)
+    BookingItems.query.filter_by(product_id=product_id).delete()
+    
+    # Now delete the product
     db.session.delete(product)
     db.session.commit()
 
@@ -919,7 +947,7 @@ def get_credit_scores(user_id, role):
 
         total_paid = db.session.query(db.func.sum(Bookings.total_price)).filter(
             Bookings.user_id == c.user_id,
-            Bookings.mode_of_payment = 'cash'
+            Bookings.mode_of_payment == 'cash'
         ).scalar() or 0
 
         result.append({

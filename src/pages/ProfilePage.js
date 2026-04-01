@@ -14,7 +14,7 @@ const ProfilePage = () => {
     address_line_2: '',
     city: '',
     state: '',
-    pin_code: '',
+    pin: '',
     is_default: false
   });
 
@@ -28,7 +28,7 @@ const ProfilePage = () => {
     try {
       const response = await api.get('/addresses/', {
         headers: {
-          'User-ID': user.id,
+          'User-Id': user.user_id,
           'Role': user.role
         }
       });
@@ -53,7 +53,7 @@ const ProfilePage = () => {
     try {
       await api.post('/addresses/', formData, {
         headers: {
-          'User-ID': user.id,
+          'User-Id': user.user_id,
           'Role': user.role
         }
       });
@@ -63,7 +63,7 @@ const ProfilePage = () => {
         address_line_2: '',
         city: '',
         state: '',
-        pin_code: '',
+        pin: '',
         is_default: false
       });
       setEditing(false);
@@ -79,7 +79,7 @@ const ProfilePage = () => {
         is_default: true
       }, {
         headers: {
-          'User-ID': user.id,
+          'User-Id': user.user_id,
           'Role': user.role
         }
       });
@@ -94,7 +94,7 @@ const ProfilePage = () => {
     try {
       await api.delete(`/addresses/${addressId}`, {
         headers: {
-          'User-ID': user.id,
+          'User-Id': user.user_id,
           'Role': user.role
         }
       });
@@ -125,23 +125,23 @@ const ProfilePage = () => {
         ) : (
           <ul className="addresses-list">
             {addresses.map(address => (
-              <li key={address.id} className={`address-item ${address.is_default ? 'default' : ''}`}>
+              <li key={address.address_id || address.id} className={`address-item ${address.is_default ? 'default' : ''}`}>
                 <div className="address-details">
                   <p><strong>{address.is_default ? '(Default) ' : ''}{address.address_line_1}</strong></p>
                   {address.address_line_2 && <p>{address.address_line_2}</p>}
-                  <p>{address.city}, {address.state} {address.pin_code}</p>
+                  <p>{address.city}, {address.state} {address.pin}</p>
                 </div>
                 <div className="address-actions">
                   {!address.is_default && (
                     <button
-                      onClick={() => setDefaultAddress(address.id)}
+                      onClick={() => setDefaultAddress(address.address_id || address.id)}
                       className="btn btn-sm"
                     >
                       Set as Default
                     </button>
                   )}
                   <button
-                    onClick={() => deleteAddress(address.id)}
+                    onClick={() => deleteAddress(address.address_id || address.id)}
                     className="btn btn-sm btn-danger"
                   >
                     Delete
@@ -207,8 +207,8 @@ const ProfilePage = () => {
               <label>PIN Code</label>
               <input
                 type="text"
-                name="pin_code"
-                value={formData.pin_code}
+                name="pin"
+                value={formData.pin}
                 onChange={handleChange}
                 required
                 className="form-control"
@@ -239,7 +239,7 @@ const ProfilePage = () => {
         </div>
       )}
       
-      <Link to="/" className="btn btn-link mt-4">
+      <Link to={user?.role === 'admin' ? '/admin/dashboard' : '/customer/dashboard'} className="btn btn-link mt-4">
         Back to Home
       </Link>
     </div>

@@ -29,10 +29,12 @@ const LoginPage = () => {
         }
       });
       const { user_id, role: userRole, name } = response.data;
-      login({ id: user_id, role: userRole, name, email });
+      login({ user_id, role: userRole, name, email });
       if (userRole === 'admin') {
+        console.log('Navigating to admin dashboard...');
         navigate('/admin/dashboard');
       } else {
+        console.log('Navigating to customer dashboard...');
         navigate('/customer/dashboard');
       }
     } catch (err) {

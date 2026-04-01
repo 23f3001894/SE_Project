@@ -2,7 +2,7 @@
 // Set USE_MOCK_API = false to use real backend
 
 import axios from 'axios';
-
+import { createMockAxios } from './mockApi';
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
@@ -59,7 +59,7 @@ realAxios.interceptors.response.use(
 // ============================================================================
 
 // Import mock API
-import { createMockAxios } from './mockApi';
+
 const mockAxios = createMockAxios();
 
 // ============================================================================

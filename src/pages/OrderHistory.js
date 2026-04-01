@@ -18,7 +18,7 @@ const OrderHistory = () => {
     try {
       const response = await api.get('/bookings/history', {
         headers: {
-          'User-ID': user.id,
+          'User-Id': user.user_id,
           'Role': user.role
         }
       });

@@ -39,7 +39,7 @@ const CreateProduct = () => {
       await api.post('/products/', productData, {
         headers: {
           'Role': 'admin',
-          'User-ID': user.id
+          'User-Id': user.user_id
         }
       });
       

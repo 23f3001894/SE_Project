@@ -52,7 +52,7 @@ const ProductDetails = () => {
         { product_id: id, quantity },
         {
           headers: {
-            'User-ID': user.id,
+            'User-Id': user.user_id,
             'Role': user.role
           }
         }

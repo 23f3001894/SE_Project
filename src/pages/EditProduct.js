@@ -78,7 +78,7 @@ const EditProduct = () => {
         headers: {
           'Content-Type': 'application/json',
           'Role': 'admin',
-          'User-ID': user.id
+          'User-Id': user.user_id
         }
       });
       

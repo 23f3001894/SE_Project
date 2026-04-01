@@ -28,10 +28,11 @@ let nextOrderId = 203;
 let nextCartItemId = 4;
 let nextAddressId = 4;
 
-// Helper to get user from headers
+// Helper to get user from headers (case-insensitive)
 const getUserFromHeaders = (headers) => {
-  const userId = headers['user-id'];
-  const role = headers['role'];
+  // HTTP headers are case-insensitive, so we need to handle different cases
+  const userId = headers['User-Id'] || headers['user-id'] || headers['USER-ID'];
+  const role = headers['Role'] || headers['role'] || headers['ROLE'];
   return { id: parseInt(userId), role };
 };
 
@@ -188,9 +189,18 @@ export const mockCartAPI = {
 
   remove: async (cartItemId, headers) => {
     await simulateDelay(200);
+    console.log('Mock cart remove called with cartItemId:', cartItemId, 'headers:', headers);
     const { id } = getUserFromHeaders(headers);
+    console.log('User ID from headers:', id);
+    
+    if (!id) {
+      throw { response: { data: { message: 'User ID not found in headers. Please log in again.' } } };
+    }
+    
     const userCart = cartItems[id] || [];
+    console.log('User cart:', userCart);
     const index = userCart.findIndex(i => i.cart_item_id === parseInt(cartItemId));
+    console.log('Item index:', index);
     
     if (index === -1) {
       throw { response: { data: { message: 'Item not found in cart' } } };
@@ -588,6 +598,7 @@ export const createMockAxios = () => {
     
     delete: async (url, config = {}) => {
       console.log('Mock DELETE called with URL:', url);
+      console.log('Mock DELETE config.headers:', config.headers);
       const headers = config.headers || {};
       const urlParts = url.split('/');
       
@@ -600,6 +611,7 @@ export const createMockAxios = () => {
       // Cart
       if (url.match(/\/cart\/remove\/\d+/) || url.match(/\/api\/cart\/remove\/\d+/) || url.match(/http:\/\/localhost:5000\/api\/cart\/remove\/\d+/)) {
         const cartItemId = url.match(/\/cart\/remove\/(\d+)/)?.[1] || url.match(/\/api\/cart\/remove\/(\d+)/)?.[1] || urlParts[urlParts.length - 1];
+        console.log('Cart remove matched - cartItemId:', cartItemId);
         return mockCartAPI.remove(cartItemId, headers);
       }
       
