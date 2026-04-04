@@ -1,0 +1,1276 @@
+openapi: 3.0.0
+info:
+  title: AgriFlow API
+  description: |
+    AgriFlow is an agricultural e-commerce platform that connects farmers with customers, 
+    enabling product listing, ordering, cart management, booking, reviews, and administrative 
+    features including demand forecasting, recommendations, credit scoring, and offer management.
+    
+    ## User Story Mapping
+    This API implements all user stories from Sprint 1:
+    - US1: User Registration & Login
+    - US2: Profile Management
+    - US3: Browse Products
+    - US4: Search & Filter
+    - US5: Add Products (Admin)
+    - US6: Update Products (Admin)
+    - US7: Delete Products (Admin)
+    - US8: Cart Management
+    - US9: Place Order
+    - US10: Order History
+    - US11: Product Reviews (after purchase)
+    - US12: View Reviews
+    - US13: Address Management
+    - US14: Admin Dashboard
+    - US15: Expiry Alerts
+    - US16: Top Customers
+    - US17: Monthly Reports
+    - US18: AI Demand Forecasting (GenAI Integration)
+    - US19: Credit Score Management
+    - US20: Payment Tracking
+    - US21: Offers Management
+    - US22: Review Analytics
+    - US23: Offer Notifications
+    - US24: Smart Recommendations
+    
+    ## Integrated GenAI APIs
+    - **Demand Forecasting API**: Uses linear regression and trend analysis to predict future product demand
+  version: 1.0.0
+  contact:
+    name: AgriFlow Developer Team
+
+servers:
+  - url: http://localhost:5000/api
+    description: Development server
+
+tags:
+  - name: Authentication
+    description: User registration and login operations
+  - name: Products
+    description: Product management operations
+  - name: Cart
+    description: Shopping cart operations
+  - name: Bookings
+    description: Order/booking management
+  - name: Reviews
+    description: Product review operations
+  - name: Addresses
+    description: User address management
+  - name: Admin
+    description: Admin dashboard, analytics, and management operations
+
+paths:
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register a new user
+      description: Creates a new user account and automatically creates a shopping cart for the user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - password
+              properties:
+                name:
+                  type: string
+                  description: User's full name
+                email:
+                  type: string
+                  format: email
+                  description: User's email address
+                password:
+                  type: string
+                  format: password
+                  description: User's password
+                mobile_no:
+                  type: string
+                  description: User's mobile number
+                role:
+                  type: string
+                  enum: [customer, admin]
+                  default: customer
+      responses:
+        201:
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user_id:
+                    type: integer
+        400:
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: Authenticates user and returns user details
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        200:
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user_id:
+                    type: integer
+                  role:
+                    type: string
+                  name:
+                    type: string
+        401:
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /products:
+    get:
+      tags:
+        - Products
+      summary: Get all products
+      description: Returns all products. Customers see only non-expired products, admins see all products.
+      parameters:
+        - name: Role
+          in: header
+          schema:
+            type: string
+            enum: [customer, admin]
+          description: User role to determine product visibility
+      responses:
+        200:
+          description: List of products
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+    post:
+      tags:
+        - Products
+      summary: Create a new product
+      description: Creates a new product (admin only)
+      parameters:
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - quantity
+                - price
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                quantity:
+                  type: integer
+                price:
+                  type: number
+                expiry_date:
+                  type: string
+                  format: date
+      responses:
+        201:
+          description: Product created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  product_id:
+                    type: integer
+        403:
+          description: Unauthorized
+
+  /products/{product_id}:
+    get:
+      tags:
+        - Products
+      summary: Get a specific product
+      parameters:
+        - name: product_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Product details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  product:
+                    $ref: '#/components/schemas/Product'
+        404:
+          description: Product not found
+    put:
+      tags:
+        - Products
+      summary: Update a product
+      description: Updates product details (admin only)
+      parameters:
+        - name: product_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                quantity:
+                  type: integer
+                price:
+                  type: number
+                expiry_date:
+                  type: string
+      responses:
+        200:
+          description: Product updated
+        403:
+          description: Unauthorized
+    delete:
+      tags:
+        - Products
+      summary: Delete a product
+      description: Deletes a product and all related data (admin only)
+      parameters:
+        - name: product_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      responses:
+        200:
+          description: Product deleted
+        403:
+          description: Unauthorized
+
+  /cart:
+    get:
+      tags:
+        - Cart
+      summary: Get user's cart
+      parameters:
+        - name: User-ID
+          in: header
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Cart items and total
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cart_items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CartItem'
+                  total_price:
+                    type: number
+        400:
+          description: User ID required
+        404:
+          description: Cart not found
+
+  /cart/add:
+    post:
+      tags:
+        - Cart
+      summary: Add item to cart
+      parameters:
+        - name: User-ID
+          in: header
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - product_id
+                - quantity
+              properties:
+                product_id:
+                  type: integer
+                quantity:
+                  type: integer
+      responses:
+        200:
+          description: Item added to cart
+        400:
+          description: Insufficient stock or User ID required
+
+  /cart/update/{cart_item_id}:
+    put:
+      tags:
+        - Cart
+      summary: Update cart item quantity
+      parameters:
+        - name: cart_item_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: User-ID
+          in: header
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - quantity
+              properties:
+                quantity:
+                  type: integer
+      responses:
+        200:
+          description: Cart item updated
+        400:
+          description: Insufficient stock or User ID required
+        403:
+          description: Unauthorized
+
+  /cart/remove/{cart_item_id}:
+    delete:
+      tags:
+        - Cart
+      summary: Remove item from cart
+      parameters:
+        - name: cart_item_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: User-ID
+          in: header
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Item removed from cart
+        400:
+          description: User ID required
+        403:
+          description: Unauthorized
+
+  /bookings:
+    post:
+      tags:
+        - Bookings
+      summary: Create a booking/order
+      description: Creates an order from the user's cart
+      parameters:
+        - name: User-ID
+          in: header
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - delivery_address_id
+                - mode_of_payment
+              properties:
+                delivery_address_id:
+                  type: integer
+                mode_of_payment:
+                  type: string
+                  enum: [Cash, Credit, Card, UPI]
+                delivery_date:
+                  type: string
+                  format: date
+      responses:
+        201:
+          description: Booking created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  booking_id:
+                    type: integer
+                  total_price:
+                    type: number
+        400:
+          description: Cart is empty or insufficient stock
+
+  /bookings/history:
+    get:
+      tags:
+        - Bookings
+      summary: Get booking history
+      description: Returns user's order history (or all orders for admin)
+      parameters:
+        - name: User-ID
+          in: header
+          required: true
+          schema:
+            type: integer
+        - name: Role
+          in: header
+          schema:
+            type: string
+            enum: [customer, admin]
+      responses:
+        200:
+          description: List of bookings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bookings:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Booking'
+        400:
+          description: User ID required
+
+  /reviews:
+    post:
+      tags:
+        - Reviews
+      summary: Create a product review
+      description: Users can review products they have purchased
+      parameters:
+        - name: User-ID
+          in: header
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - product_id
+                - rating
+              properties:
+                product_id:
+                  type: integer
+                rating:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                review:
+                  type: string
+      responses:
+        201:
+          description: Review created
+        400:
+          description: Already reviewed or invalid input
+        403:
+          description: Can only review purchased products
+
+  /reviews/product/{product_id}:
+    get:
+      tags:
+        - Reviews
+      summary: Get product reviews
+      parameters:
+        - name: product_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: List of reviews
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reviews:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Review'
+
+  /addresses:
+    get:
+      tags:
+        - Addresses
+      summary: Get user addresses
+      parameters:
+        - name: User-ID
+          in: header
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: List of addresses
+    post:
+      tags:
+        - Addresses
+      summary: Create a new address
+      parameters:
+        - name: User-ID
+          in: header
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddressInput'
+      responses:
+        201:
+          description: Address created
+
+  /addresses/{address_id}:
+    put:
+      tags:
+        - Addresses
+      summary: Update an address
+      parameters:
+        - name: address_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: User-ID
+          in: header
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddressInput'
+      responses:
+        200:
+          description: Address updated
+        403:
+          description: Unauthorized
+    delete:
+      tags:
+        - Addresses
+      summary: Delete an address
+      parameters:
+        - name: address_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: User-ID
+          in: header
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Address deleted
+        403:
+          description: Unauthorized
+
+  /admin/dashboard/stats:
+    get:
+      tags:
+        - Admin
+      summary: Get admin dashboard statistics
+      description: Returns overall statistics for the admin dashboard
+      parameters:
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      responses:
+        200:
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_products:
+                    type: integer
+                  total_users:
+                    type: integer
+                  total_orders:
+                    type: integer
+                  expiring_soon:
+                    type: integer
+                  expired_products:
+                    type: integer
+                  low_stock:
+                    type: integer
+        403:
+          description: Unauthorized
+
+  /admin/products/expiring:
+    get:
+      tags:
+        - Admin
+      summary: Get products expiring soon
+      description: Returns products expiring within 3 days
+      parameters:
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      responses:
+        200:
+          description: List of expiring products
+
+  /admin/products/expired:
+    get:
+      tags:
+        - Admin
+      summary: Get expired products
+      description: Returns all expired products
+      parameters:
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      responses:
+        200:
+          description: List of expired products
+
+  /admin/customers/top:
+    get:
+      tags:
+        - Admin
+      summary: Get top customers
+      description: Returns top 10 customers by number of orders
+      parameters:
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      responses:
+        200:
+          description: List of top customers
+
+  /admin/reports/monthly:
+    get:
+      tags:
+        - Admin
+      summary: Get monthly report
+      description: Returns monthly sales and analytics report
+      parameters:
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+        - name: month
+          in: query
+          schema:
+            type: integer
+        - name: year
+          in: query
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Monthly report data
+
+  /admin/forecast/demand:
+    get:
+      tags:
+        - Admin
+      summary: Demand forecasting
+      description: Predict future demand for a product based on historical sales
+      parameters:
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+        - name: product_id
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: months_ahead
+          in: query
+          schema:
+            type: integer
+            default: 3
+      responses:
+        200:
+          description: Demand forecast data
+
+  /admin/recommendations/push-expiry:
+    get:
+      tags:
+        - Admin
+      summary: Expiry-based recommendations
+      description: Recommends products to push for sale based on expiry date
+      parameters:
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      responses:
+        200:
+          description: Expiry recommendations
+
+  /admin/recommendations/high-demand:
+    get:
+      tags:
+        - Admin
+      summary: High demand recommendations
+      description: Recommends products to restock based on recent sales
+      parameters:
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      responses:
+        200:
+          description: High demand recommendations
+
+  /admin/customers/credit-scores:
+    get:
+      tags:
+        - Admin
+      summary: Get customer credit scores
+      description: Returns all customers with their credit scores
+      parameters:
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      responses:
+        200:
+          description: List of customers with credit scores
+
+  /admin/customers/{customer_id}/credit-score:
+    put:
+      tags:
+        - Admin
+      summary: Update customer credit score
+      description: Updates a customer's credit score
+      parameters:
+        - name: customer_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - credit_score
+              properties:
+                credit_score:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+      responses:
+        200:
+          description: Credit score updated
+
+  /admin/payments/pending:
+    get:
+      tags:
+        - Admin
+      summary: Get pending payments
+      description: Returns all bookings with pending credit payments
+      parameters:
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      responses:
+        200:
+          description: List of pending payments
+
+  /admin/payments/record:
+    post:
+      tags:
+        - Admin
+      summary: Record a payment
+      description: Records payment for a credit booking
+      parameters:
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - booking_id
+                - amount_paid
+              properties:
+                booking_id:
+                  type: integer
+                amount_paid:
+                  type: number
+      responses:
+        200:
+          description: Payment recorded successfully
+
+  /admin/offers:
+    get:
+      tags:
+        - Admin
+      summary: Get all offers
+      description: Returns all promotional offers
+      parameters:
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      responses:
+        200:
+          description: List of offers
+    post:
+      tags:
+        - Admin
+      summary: Create a new offer
+      description: Creates a new promotional offer
+      parameters:
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OfferInput'
+      responses:
+        201:
+          description: Offer created
+
+  /admin/offers/{offer_id}:
+    put:
+      tags:
+        - Admin
+      summary: Update an offer
+      parameters:
+        - name: offer_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OfferInput'
+      responses:
+        200:
+          description: Offer updated
+    delete:
+      tags:
+        - Admin
+      summary: Delete an offer
+      parameters:
+        - name: offer_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      responses:
+        200:
+          description: Offer deleted
+
+  /admin/offers/send-notifications:
+    post:
+      tags:
+        - Admin
+      summary: Send offer notifications to customers
+      description: Push offer notifications to all customers
+      parameters:
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - offer_id
+              properties:
+                offer_id:
+                  type: integer
+      responses:
+        200:
+          description: Notifications sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  notifications_sent:
+                    type: integer
+
+  /admin/reviews:
+    get:
+      tags:
+        - Admin
+      summary: Get all reviews with pagination
+      description: Get all product reviews with pagination support
+      parameters:
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        200:
+          description: List of reviews with pagination
+
+  /admin/reviews/summary:
+    get:
+      tags:
+        - Admin
+      summary: Get review analytics summary
+      description: Returns overall review statistics, rating distribution, top rated and most reviewed products
+      parameters:
+        - name: Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+      responses:
+        200:
+          description: Review analytics summary
+
+  /bookings/notifications/offers:
+    get:
+      tags:
+        - Bookings
+      summary: Get user offer notifications
+      description: Returns offer notifications for the logged-in user
+      parameters:
+        - name: User-ID
+          in: header
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: List of offer notifications
+
+  /bookings/notifications/offers/{notification_id}/read:
+    put:
+      tags:
+        - Bookings
+      summary: Mark offer notification as read
+      parameters:
+        - name: notification_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: User-ID
+          in: header
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Notification marked as read
+        403:
+          description: Unauthorized
+
+components:
+  schemas:
+    Product:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        quantity:
+          type: integer
+        price:
+          type: number
+        date_added:
+          type: string
+          format: date-time
+        expiry_date:
+          type: string
+          format: date-time
+        expiry_status:
+          type: string
+          enum: [valid, expiring_soon, expired]
+        no_of_orders:
+          type: integer
+
+    CartItem:
+      type: object
+      properties:
+        cart_item_id:
+          type: integer
+        product_id:
+          type: integer
+        product_name:
+          type: string
+        quantity:
+          type: integer
+        price:
+          type: number
+        total_price:
+          type: number
+
+    Booking:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        customer_name:
+          type: string
+        booking_date:
+          type: string
+          format: date-time
+        total_price:
+          type: number
+        delivery_address:
+          type: object
+        delivery_date:
+          type: string
+          format: date-time
+        mode_of_payment:
+          type: string
+        status:
+          type: string
+        items:
+          type: array
+
+    Review:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_name:
+          type: string
+        rating:
+          type: integer
+        review:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    AddressInput:
+      type: object
+      required:
+        - address_line_1
+        - city
+        - state
+        - pin_code
+      properties:
+        address_line_1:
+          type: string
+        address_line_2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        pin_code:
+          type: string
+        is_default:
+          type: boolean
+
+    OfferInput:
+      type: object
+      required:
+        - title
+        - discount_type
+        - discount_value
+        - start_date
+        - end_date
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        discount_type:
+          type: string
+          enum: [percentage, fixed]
+        discount_value:
+          type: number
+        product_id:
+          type: integer
+        start_date:
+          type: string
+          format: date-time
+        end_date:
+          type: string
+          format: date-time
+        is_active:
+          type: boolean
+        usage_limit:
+          type: integer
