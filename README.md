@@ -1,29 +1,85 @@
-# AgriFlow - Agricultural E-commerce Frontend
+# AgriFlow - Agricultural E-commerce Platform
 
-This is the frontend application for AgriFlow, an agricultural e-commerce platform. This frontend is designed to work **without a backend** - all data is mocked locally for demonstration purposes.
+AgriFlow is a full-stack agricultural e-commerce platform connecting farmers with customers. It includes a Flask backend API and React frontend.
 
 ## Features
 
-- **User Authentication**: Login/Register as Customer or Admin
-- **Product Catalog**: Browse and search agricultural products
-- **Shopping Cart**: Add products to cart and manage quantities
-- **Order Management**: Place orders and view order history
+- **User Authentication**: Register/Login as Customer or Admin
+- **Product Management**: Browse, create, update, and delete products (Admin)
+- **Shopping Cart**: Add products, update quantities, remove items
+- **Order Management**: Place orders, view order history
 - **Address Management**: Save and manage delivery addresses
-- **Admin Dashboard**: View statistics, manage products, and analyze sales
-- **Demand Forecasting**: Predict future product demand
+- **Product Reviews**: Rate and review purchased products
+- **Admin Dashboard**: Statistics, product management, sales analytics
+- **AI Demand Forecasting**: Predict future product demand using linear regression
+- **Credit Score Management**: Track and update customer credit scores
+- **Offer Management**: Create and manage promotional offers
+- **Offer Notifications**: Push notifications to customers
+- **Review Analytics**: Rating distribution, top-rated products
+
+## Tech Stack
+
+- **Backend**: Flask (Python) with SQLite database
+- **Frontend**: React.js
+- **Testing**: pytest (35+ unit tests)
+
+## Project Structure
+
+```
+Agriflow/
+├── backend/                 # Flask API
+│   ├── app.py              # Application setup
+│   ├── models.py          # Database models
+│   ├── routes.py          # API endpoints
+│   ├── requirements.txt   # Python dependencies
+│   └── instance/          # SQLite database
+├── frontend/               # React application
+│   ├── src/
+│   │   ├── components/   # UI components
+│   │   ├── context/      # Auth context
+│   │   ├── pages/        # Page components
+│   │   └── services/     # API services
+│   └── package.json
+├── test_sprint1_api.py     # Pytest unit tests
+├── Sprint1_API_Documentation.yaml  # API documentation
+├── Sprint1_TestCases_Documentation.md
+└── Sprint1_Deliverables_Explanation.md
+```
 
 ## Getting Started
 
-### Prerequisites
+### Backend Setup
 
-- Node.js (v14 or higher)
-- npm or yarn
-
-### Installation
-
-1. Navigate to the project directory:
+1. Navigate to backend folder:
    ```bash
-   cd SE_Project-main
+   cd backend
+   ```
+
+2. Create virtual environment (optional):
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # Linux/Mac
+   # or
+   venv\Scripts\activate     # Windows
+   ```
+
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. Run the backend server:
+   ```bash
+   python app.py
+   ```
+
+5. Backend runs at: http://localhost:5000
+
+### Frontend Setup
+
+1. Navigate to frontend folder:
+   ```bash
+   cd frontend
    ```
 
 2. Install dependencies:
@@ -36,87 +92,63 @@ This is the frontend application for AgriFlow, an agricultural e-commerce platfo
    npm start
    ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser
+4. Frontend runs at: http://localhost:3000
 
 ## Demo Accounts
-
-The application comes with pre-configured demo accounts:
 
 ### Admin Account
 - **Email**: admin@agriflow.com
 - **Password**: admin123
 - **Role**: Admin (Shop Owner)
 
-### Customer Accounts
-- **Email**: john@farmer.com
+### Customer Account
+- **Email**: customer@agriflow.com
 - **Password**: customer123
-- **Role**: Customer (Farmer)
+- **Role**: Customer (Farmer/Retailer)
 
-- **Email**: jane@retailer.com
-- **Password**: customer123
-- **Role**: Customer (Retailer)
+## API Endpoints
 
-## Project Structure
+| Category | Endpoints |
+|----------|-----------|
+| Auth | `/api/auth/register`, `/api/auth/login` |
+| Products | `/api/products/` (CRUD) |
+| Cart | `/api/cart/`, `/api/cart/add`, `/api/cart/update/{id}`, `/api/cart/remove/{id}` |
+| Bookings | `/api/bookings/`, `/api/bookings/history` |
+| Reviews | `/api/reviews/`, `/api/reviews/product/{id}` |
+| Addresses | `/api/addresses/` (CRUD) |
+| Admin | Dashboard, forecasting, credit scores, offers, reviews |
 
-```
-src/
-├── components/        # Reusable UI components
-├── context/           # React context (AuthContext)
-├── data/             # Mock data
-├── pages/            # Page components
-│   ├── LoginPage.js
-│   ├── AdminDashboard.js
-│   ├── CustomerDashboard.js
-│   ├── ProductList.js
-│   ├── ProductDetails.js
-│   ├── CartPage.js
-│   ├── OrderHistory.js
-│   ├── ProfilePage.js
-│   ├── CreateProduct.js
-│   ├── EditProduct.js
-│   └── ForecastingPage.js
-├── services/         # API services
-│   ├── api.js        # API configuration
-│   └── mockApi.js    # Mock API implementation
-└── App.js            # Main application component
+## Running Tests
+
+```bash
+# Run pytest unit tests
+pytest test_sprint1_api.py -v
 ```
 
-## Mock Data
+## API Documentation
 
-The application uses mock data stored in `src/data/mockData.js`. This includes:
-- Sample products (fruits, vegetables, grains)
-- Demo users (1 admin, 2 customers)
-- Cart items and order history
-- Addresses
+Full API documentation is available in `Sprint1_API_Documentation.yaml` (OpenAPI format).
 
-You can modify this file to customize the demo data.
+## Deliverables
 
-## Available Pages
-
-| Route | Description |
-|-------|-------------|
-| `/` or `/login` | Login/Registration page |
-| `/admin/dashboard` | Admin dashboard with statistics |
-| `/customer/dashboard` | Customer dashboard with products |
-| `/products` | Product listing page |
-| `/products/:id` | Product details page |
-| `/products/create` | Create new product (Admin) |
-| `/products/:id/edit` | Edit product (Admin) |
-| `/cart` | Shopping cart |
-| `/orders` | Order history |
-| `/profile` | User profile and addresses |
-| `/forecasting` | Demand forecasting (Admin) |
+| File | Description |
+|------|-------------|
+| `Sprint1_API_Documentation.yaml` | OpenAPI specification for all endpoints |
+| `Sprint1_TestCases_Documentation.md` | Detailed test cases with input/output |
+| `Sprint1_Deliverables_Explanation.md` | Grading criteria mapping |
+| `test_sprint1_api.py` | Pytest unit test suite (35+ tests) |
 
 ## Building for Production
 
-To build the application for production:
-
+### Frontend
 ```bash
+cd frontend
 npm run build
 ```
 
-This will create a `build` folder with the production-ready files.
-
-## Note
-
-This is a frontend-only application. All data is stored locally in memory and will reset when the page is refreshed. For a full production application, you would need to connect to a backend API.
+### Backend
+The backend can be deployed using any WSGI server (gunicorn, uwsgi, etc.):
+```bash
+cd backend
+gunicorn -w 4 app:app
+```
