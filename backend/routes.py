@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from models import db, User, Product, Review, Booking, BookingItem, Address, Cart, CartItem
+from backend.models import db, User, Product, Review, Booking, BookingItem, Address, Cart, CartItem, Offer, OfferNotification, Notification
 from datetime import datetime, timedelta
 import pandas as pd
 
@@ -36,6 +36,13 @@ def check_expiry_status(product):
 @auth_bp.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
+    
+    # Check for required fields
+    required_fields = ['name', 'email', 'password']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({'message': f'Missing required field: {field}'}), 400
+    
     if User.query.filter_by(email=data['email']).first():
         return jsonify({'message': 'Email already exists'}), 400
     
@@ -189,7 +196,7 @@ def delete_product(product_id):
     product = Product.query.get_or_404(product_id)
     
     # Delete related booking items first
-    from models import BookingItem, CartItem, Review
+    from backend.models import BookingItem, CartItem, Review
     
     # Delete cart items referencing this product
     CartItem.query.filter_by(product_id=product_id).delete()
@@ -1046,7 +1053,7 @@ def get_customer_credit_scores():
     # Update total_spent for all customers from their existing bookings
     customers = User.query.filter_by(role='customer').all()
     for customer in customers:
-        from models import Booking
+        from backend.models import Booking
         bookings = Booking.query.filter_by(user_id=customer.id).all()
         total = sum(booking.total_price for booking in bookings)
         if customer.total_spent != total:

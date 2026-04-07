@@ -1,8 +1,8 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
-from models import db
-from routes import auth_bp, product_bp, cart_bp, booking_bp, review_bp, address_bp, admin_bp
+from backend.models import db
+from backend.routes import auth_bp, product_bp, cart_bp, booking_bp, review_bp, address_bp, admin_bp
 
 def create_app():
     app = Flask(__name__)

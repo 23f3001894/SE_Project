@@ -1,7 +1,7 @@
 import pytest
 import json
-from app import create_app
-from models import (
+from backend.app import create_app
+from backend.models import (
     db,
     User,
     Product,
