@@ -1,14 +1,19 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../services/api';
+import { backendApi } from '../services/api';
 import Navbar from '../components/Navbar';
+import { useAuth } from '../context/AuthContext';
+import { resolveProductImage } from '../utils/products';
 
 const CreateProduct = () => {
+  const { user } = useAuth();
   const [name, setName] = useState('');
+  const [brand, setBrand] = useState('');
   const [description, setDescription] = useState('');
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
+  const [imagePath, setImagePath] = useState('/static/images/product-placeholder.svg');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -18,7 +23,6 @@ const CreateProduct = () => {
     setLoading(true);
     setError('');
     
-    const user = JSON.parse(localStorage.getItem('user'));
     if (!user || user.role !== 'admin') {
       navigate('/login');
       return;
@@ -27,21 +31,18 @@ const CreateProduct = () => {
     try {
       const productData = {
         name,
+        brand,
         description,
         quantity: parseInt(quantity),
         price: parseFloat(price),
+        image_path: imagePath,
       };
       
       if (expiryDate) {
         productData.expiry_date = expiryDate;
       }
 
-      await api.post('/products/', productData, {
-        headers: {
-          'Role': 'admin',
-          'User-ID': user.id
-        }
-      });
+      await backendApi.post('/products/', productData);
       
       alert('Product created successfully!');
       navigate('/products');
@@ -71,6 +72,17 @@ const CreateProduct = () => {
             />
           </div>
           <div className="form-group">
+            <label>Brand</label>
+            <input
+              type="text"
+              value={brand}
+              onChange={(e) => setBrand(e.target.value)}
+              required
+              className="form-control"
+              placeholder="AgriFlow Select"
+            />
+          </div>
+          <div className="form-group">
             <label>Description</label>
             <textarea
               value={description}
@@ -90,7 +102,7 @@ const CreateProduct = () => {
             />
           </div>
           <div className="form-group">
-            <label>Price (₹)</label>
+            <label>Price (Rs.)</label>
             <input
               type="number"
               value={price}
@@ -99,6 +111,21 @@ const CreateProduct = () => {
               min="0"
               step="0.01"
               className="form-control"
+            />
+          </div>
+          <div className="form-group">
+            <label>Image Path</label>
+            <input
+              type="text"
+              value={imagePath}
+              onChange={(e) => setImagePath(e.target.value)}
+              className="form-control"
+              placeholder="/static/images/product-placeholder.svg"
+            />
+            <img
+              src={resolveProductImage(imagePath)}
+              alt="Product preview"
+              className="form-image-preview"
             />
           </div>
           <div className="form-group">

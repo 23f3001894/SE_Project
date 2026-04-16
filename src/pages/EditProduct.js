@@ -1,15 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import api from '../services/api';
+import { backendApi } from '../services/api';
 import Navbar from '../components/Navbar';
+import { useAuth } from '../context/AuthContext';
+import { resolveProductImage } from '../utils/products';
 
 const EditProduct = () => {
   const { id } = useParams();
+  const { user } = useAuth();
   const [name, setName] = useState('');
+  const [brand, setBrand] = useState('');
   const [description, setDescription] = useState('');
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
+  const [imagePath, setImagePath] = useState('/static/images/product-placeholder.svg');
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState('');
@@ -22,21 +27,20 @@ const EditProduct = () => {
 
   const fetchProduct = async () => {
     try {
-      const user = JSON.parse(localStorage.getItem('user'));
       if (!user || user.role !== 'admin') {
         navigate('/login');
         return;
       }
 
-      const response = await api.get(`/products/${id}`, {
-        headers: { 'Role': 'admin' }
-      });
+      const response = await backendApi.get(`/products/${id}`);
       
       const product = response.data.product;
       setName(product.name || '');
+      setBrand(product.brand || '');
       setDescription(product.description || '');
       setQuantity(product.quantity || '');
       setPrice(product.price || '');
+      setImagePath(product.image_path || '/static/images/product-placeholder.svg');
       
       if (product.expiry_date) {
         const expiry = new Date(product.expiry_date);
@@ -54,7 +58,6 @@ const EditProduct = () => {
     setLoading(true);
     setError('');
     
-    const user = JSON.parse(localStorage.getItem('user'));
     if (!user || user.role !== 'admin') {
       navigate('/login');
       return;
@@ -64,9 +67,11 @@ const EditProduct = () => {
       console.log('Updating product with id:', id);
       const productData = {
         name,
+        brand,
         description,
         quantity: parseInt(quantity) || 0,
         price: parseFloat(price) || 0,
+        image_path: imagePath,
       };
       console.log('Product data:', productData);
       
@@ -74,13 +79,7 @@ const EditProduct = () => {
         productData.expiry_date = expiryDate;
       }
 
-      await api.put(`/products/${id}`, productData, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Role': 'admin',
-          'User-ID': user.id
-        }
-      });
+      await backendApi.put(`/products/${id}`, productData);
       
       alert('Product updated successfully!');
       navigate('/products');
@@ -115,6 +114,16 @@ const EditProduct = () => {
             />
           </div>
           <div className="form-group">
+            <label>Brand</label>
+            <input
+              type="text"
+              value={brand}
+              onChange={(e) => setBrand(e.target.value)}
+              required
+              className="form-control"
+            />
+          </div>
+          <div className="form-group">
             <label>Description</label>
             <textarea
               value={description}
@@ -134,7 +143,7 @@ const EditProduct = () => {
             />
           </div>
           <div className="form-group">
-            <label>Price (₹)</label>
+            <label>Price (Rs.)</label>
             <input
               type="number"
               value={price}
@@ -143,6 +152,20 @@ const EditProduct = () => {
               min="0"
               step="0.01"
               className="form-control"
+            />
+          </div>
+          <div className="form-group">
+            <label>Image Path</label>
+            <input
+              type="text"
+              value={imagePath}
+              onChange={(e) => setImagePath(e.target.value)}
+              className="form-control"
+            />
+            <img
+              src={resolveProductImage(imagePath)}
+              alt="Product preview"
+              className="form-image-preview"
             />
           </div>
           <div className="form-group">

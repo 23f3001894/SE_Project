@@ -1,0 +1,10 @@
+<svg width="640" height="480" viewBox="0 0 640 480" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="640" height="480" rx="36" fill="#E9F1E6"/>
+  <rect x="42" y="42" width="556" height="396" rx="28" fill="#F8FBF6" stroke="#D2E0CE" stroke-width="6"/>
+  <path d="M166 306C166 255.19 207.19 214 258 214H382C432.81 214 474 255.19 474 306V342H166V306Z" fill="#C7D6A5"/>
+  <circle cx="248" cy="198" r="52" fill="#86A96F"/>
+  <path d="M332 160C332 126.863 358.863 100 392 100C425.137 100 452 126.863 452 160C452 193.137 425.137 220 392 220C358.863 220 332 193.137 332 160Z" fill="#6F8E62"/>
+  <path d="M216 352H424" stroke="#6F8E62" stroke-width="18" stroke-linecap="round"/>
+  <path d="M240 138C255.333 117.333 282.8 84 322 84C361.2 84 390.667 115.333 408 131" stroke="#A7BE7E" stroke-width="18" stroke-linecap="round"/>
+  <text x="320" y="405" text-anchor="middle" fill="#50624B" font-family="Arial, sans-serif" font-size="28" font-weight="700">AgriFlow</text>
+</svg>

@@ -13,6 +13,8 @@ import CreateProduct from './pages/CreateProduct';
 import EditProduct from './pages/EditProduct';
 import ForecastingPage from './pages/ForecastingPage';
 import { AuthProvider } from './context/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
+import PublicOnlyRoute from './components/PublicOnlyRoute';
 
 function App() {
   return (
@@ -20,18 +22,32 @@ function App() {
       <AuthProvider>
         <div className="App">
           <Routes>
-            <Route path="/" element={<LoginPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/admin/dashboard" element={<AdminDashboard />} />
-            <Route path="/customer/dashboard" element={<CustomerDashboard />} />
+            <Route element={<PublicOnlyRoute />}>
+              <Route path="/" element={<Navigate to="/login" replace />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/signup" element={<LoginPage />} />
+            </Route>
+
             <Route path="/products" element={<ProductList />} />
             <Route path="/products/:id" element={<ProductDetails />} />
-            <Route path="/products/create" element={<CreateProduct />} />
-            <Route path="/products/:id/edit" element={<EditProduct />} />
-            <Route path="/forecasting" element={<ForecastingPage />} />
-            <Route path="/cart" element={<CartPage />} />
-            <Route path="/orders" element={<OrderHistory />} />
-            <Route path="/profile" element={<ProfilePage />} />
+
+            <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+              <Route path="/admin/dashboard" element={<AdminDashboard />} />
+              <Route path="/products/create" element={<CreateProduct />} />
+              <Route path="/products/:id/edit" element={<EditProduct />} />
+              <Route path="/forecasting" element={<ForecastingPage />} />
+            </Route>
+
+            <Route element={<ProtectedRoute allowedRoles={['customer']} />}>
+              <Route path="/customer/dashboard" element={<CustomerDashboard />} />
+              <Route path="/cart" element={<CartPage />} />
+              <Route path="/profile" element={<ProfilePage />} />
+            </Route>
+
+            <Route element={<ProtectedRoute allowedRoles={['customer', 'admin']} />}>
+              <Route path="/orders" element={<OrderHistory />} />
+            </Route>
+
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>

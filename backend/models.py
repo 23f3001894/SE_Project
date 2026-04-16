@@ -1,5 +1,6 @@
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
+from backend.auth.extensions import bcrypt
 
 db = SQLAlchemy()
 
@@ -21,6 +22,20 @@ class User(db.Model):
     reviews = db.relationship('Review', backref='user', lazy=True)
     bookings = db.relationship('Booking', backref='user', lazy=True)
     cart = db.relationship('Cart', backref='user', uselist=False)
+    products = db.relationship('Product', backref='seller', lazy=True, foreign_keys='Product.admin_id')
+
+    def set_password(self, raw_password):
+        self.password = bcrypt.generate_password_hash(raw_password).decode('utf-8')
+
+    def check_password(self, raw_password):
+        if not self.password:
+            return False
+
+        # Temporary fallback for legacy plaintext records already present in dev DBs.
+        if self.password.startswith('$2'):
+            return bcrypt.check_password_hash(self.password, raw_password)
+
+        return self.password == raw_password
 
 class Address(db.Model):
     __tablename__ = 'addresses'
@@ -35,6 +50,12 @@ class Address(db.Model):
 
     __table_args__ = (db.UniqueConstraint('user_id', 'id', name='_user_address_uc'),)
 
+class Brand(db.Model):
+    __tablename__ = 'brands'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 class Product(db.Model):
     __tablename__ = 'products'
     id = db.Column(db.Integer, primary_key=True)
@@ -46,10 +67,18 @@ class Product(db.Model):
     expiry_date = db.Column(db.DateTime)
     expiry_status = db.Column(db.String(20), default='valid')
     no_of_orders = db.Column(db.Integer, default=0)
+    image_path = db.Column(db.String(255), default='/static/images/product-placeholder.svg')
+    brand_id = db.Column(db.Integer, db.ForeignKey('brands.id'))
+    admin_id = db.Column(db.Integer, db.ForeignKey('user.id'))
 
     reviews = db.relationship('Review', backref='product', lazy=True)
     booking_items = db.relationship('BookingItem', backref='product', lazy=True)
     cart_items = db.relationship('CartItem', backref='product', lazy=True)
+    brand = db.relationship('Brand', backref='products')
+
+    @property
+    def stock(self):
+        return self.quantity
 
 class Review(db.Model):
     __tablename__ = 'reviews'

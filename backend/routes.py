@@ -1,7 +1,24 @@
 from flask import Blueprint, request, jsonify
-from backend.models import db, User, Product, Review, Booking, BookingItem, Address, Cart, CartItem, Offer, OfferNotification, Notification
+from backend.auth import ensure_roles, get_current_user_id, get_current_user_role, get_optional_user_role
+from backend.models import db, User, Brand, Product, Review, Booking, BookingItem, Address, Cart, CartItem, Offer, OfferNotification, Notification
+from backend.services.auth_service import build_auth_payload, create_user, normalize_role
+from backend.services.email_service import (
+    send_order_confirmation_email,
+    send_order_delivered_email,
+    send_signup_email,
+)
+from backend.services.forecast_service import build_demand_forecast
+from backend.services.reporting_service import (
+    build_admin_top_customers,
+    build_daily_sales,
+    build_monthly_sales,
+    build_sales_summary,
+    get_admin_bookings,
+    get_admin_product_ids,
+)
 from datetime import datetime, timedelta
 import pandas as pd
+from sqlalchemy import or_
 
 # Create blueprints
 auth_bp = Blueprint('auth', __name__)
@@ -10,6 +27,43 @@ cart_bp = Blueprint('cart', __name__)
 booking_bp = Blueprint('booking', __name__)
 review_bp = Blueprint('review', __name__)
 address_bp = Blueprint('address', __name__)
+admin_bp = Blueprint('admin', __name__)
+
+
+@cart_bp.before_request
+def protect_cart_routes():
+    return ensure_roles('customer')
+
+
+@address_bp.before_request
+def protect_address_routes():
+    return ensure_roles('customer')
+
+
+@admin_bp.before_request
+def protect_admin_routes():
+    return ensure_roles('admin')
+
+
+@booking_bp.before_request
+def protect_booking_routes():
+    if request.endpoint == 'booking.get_booking_history':
+        return ensure_roles('customer', 'admin')
+    return ensure_roles('customer')
+
+
+@review_bp.before_request
+def protect_review_routes():
+    if request.endpoint == 'review.get_product_reviews':
+        return None
+    return ensure_roles('customer')
+
+
+@product_bp.before_request
+def protect_product_routes():
+    if request.method == 'GET':
+        return None
+    return ensure_roles('admin')
 
 # Helper function to check if product is expired or expiring soon
 def check_expiry_status(product):
@@ -32,168 +86,285 @@ def check_expiry_status(product):
         product.expiry_status = 'valid'
     return product.expiry_status
 
-# Auth Routes
-@auth_bp.route('/register', methods=['POST'])
-def register():
-    data = request.get_json()
-    
-    # Check for required fields
-    required_fields = ['name', 'email', 'password']
-    for field in required_fields:
-        if field not in data:
-            return jsonify({'message': f'Missing required field: {field}'}), 400
-    
-    if User.query.filter_by(email=data['email']).first():
-        return jsonify({'message': 'Email already exists'}), 400
-    
-    new_user = User(
-        name=data['name'],
-        email=data['email'],
-        password=data['password'],  # In production, hash the password
-        mobile_no=data.get('mobile_no'),
-        role=data.get('role', 'customer')
-    )
-    db.session.add(new_user)
-    db.session.commit()
-    
-    # Create a cart for the user
-    cart = Cart(user_id=new_user.id)
-    db.session.add(cart)
-    db.session.commit()
-    
-    return jsonify({'message': 'User created successfully', 'user_id': new_user.id}), 201
 
-@auth_bp.route('/login', methods=['POST'])
-def login():
-    data = request.get_json()
-    user = User.query.filter_by(email=data['email'], password=data['password']).first()
-    if user:
-        user.last_login = datetime.utcnow()
-        db.session.commit()
-        return jsonify({
-            'message': 'Login successful',
-            'user_id': user.id,
-            'role': user.role,
-            'name': user.name
-        }), 200
-    return jsonify({'message': 'Invalid credentials'}), 401
+def parse_expiry_date(expiry_date_value):
+    if not expiry_date_value:
+        return None
 
-# Product Routes
-@product_bp.route('/', methods=['GET'])
-def get_products():
-    # For customers, show only valid products (not expired)
-    # For admins, show all products
-    # We'll check role from request headers or token (simplified for now)
-    # In a real app, you'd use authentication middleware
-    role = request.headers.get('Role', 'customer')  # Simplified
-    
-    if role == 'admin':
-        products = Product.query.all()
-    else:
-        products = Product.query.filter(Product.expiry_status != 'expired').all()
-    
-    output = []
-    for product in products:
-        product_data = {
-            'id': product.id,
-            'name': product.name,
-            'description': product.description,
-            'quantity': product.quantity,
-            'price': product.price,
-            'date_added': product.date_added.isoformat() if product.date_added else None,
-            'expiry_date': product.expiry_date.isoformat() if product.expiry_date else None,
-            'expiry_status': product.expiry_status,
-            'no_of_orders': product.no_of_orders
-        }
-        output.append(product_data)
-    return jsonify({'products': output})
-
-@product_bp.route('/', methods=['POST'])
-def create_product():
-    # Only admin can create products
-    if request.headers.get('Role') != 'admin':
-        return jsonify({'message': 'Unauthorized'}), 403
-    
-    data = request.get_json()
-    
-    # Convert expiry_date string to datetime object
-    expiry_date = None
-    if data.get('expiry_date'):
+    try:
+        return datetime.fromisoformat(expiry_date_value.replace('Z', '+00:00'))
+    except ValueError:
         try:
-            expiry_date = datetime.fromisoformat(data['expiry_date'].replace('Z', '+00:00'))
+            return datetime.strptime(expiry_date_value, '%Y-%m-%d')
         except ValueError:
-            try:
-                expiry_date = datetime.strptime(data['expiry_date'], '%Y-%m-%d')
-            except ValueError:
-                return jsonify({'message': 'Invalid expiry_date format. Use YYYY-MM-DD'}), 400
-    
-    new_product = Product(
-        name=data['name'],
-        description=data.get('description'),
-        quantity=data['quantity'],
-        price=data['price'],
-        expiry_date=expiry_date
-    )
-    # Check expiry status
-    check_expiry_status(new_product)
-    
-    db.session.add(new_product)
-    db.session.commit()
-    return jsonify({'message': 'Product created', 'product_id': new_product.id}), 201
+            return None
 
-@product_bp.route('/<int:product_id>', methods=['GET'])
-def get_product(product_id):
-    product = Product.query.get_or_404(product_id)
-    product_data = {
+
+def resolve_brand(brand_value=None, brand_id=None):
+    if brand_id:
+        brand = db.session.get(Brand, int(brand_id))
+        if brand:
+            return brand
+
+    normalized_name = (brand_value or 'AgriFlow Select').strip()
+    existing_brand = Brand.query.filter(
+        Brand.name.ilike(normalized_name)
+    ).first()
+
+    if existing_brand:
+        return existing_brand
+
+    brand = Brand(name=normalized_name)
+    db.session.add(brand)
+    db.session.flush()
+    return brand
+
+
+def serialize_product(product):
+    check_expiry_status(product)
+    return {
         'id': product.id,
         'name': product.name,
         'description': product.description,
         'quantity': product.quantity,
+        'stock': product.quantity,
         'price': product.price,
+        'brand': product.brand.name if product.brand else None,
+        'brand_id': product.brand_id,
+        'image_path': product.image_path or '/static/images/product-placeholder.svg',
+        'seller_id': product.admin_id,
+        'seller_name': product.seller.name if product.seller else None,
         'date_added': product.date_added.isoformat() if product.date_added else None,
         'expiry_date': product.expiry_date.isoformat() if product.expiry_date else None,
         'expiry_status': product.expiry_status,
         'no_of_orders': product.no_of_orders
     }
-    return jsonify({'product': product_data})
+
+
+def booking_belongs_to_admin(booking, admin_id):
+    return any(item.product and item.product.admin_id == admin_id for item in booking.items)
+
+# Auth Routes
+@auth_bp.route('/register', methods=['POST'])
+def register():
+    data = request.get_json() or {}
+    
+    # Check for required fields
+    required_fields = ['name', 'email', 'password']
+    for field in required_fields:
+        if not data.get(field):
+            return jsonify({'message': f'Missing required field: {field}'}), 400
+    
+    email = data['email'].strip().lower()
+    role = normalize_role(data.get('role', 'customer'))
+    if not role:
+        return jsonify({'message': 'Invalid role. Use customer or admin.'}), 400
+
+    if User.query.filter_by(email=email).first():
+        return jsonify({'message': 'Email already exists'}), 400
+    
+    new_user = create_user(
+        name=data['name'],
+        email=email,
+        password=data['password'],
+        mobile_no=data.get('mobile_no'),
+        role=role
+    )
+    db.session.commit()
+    send_signup_email(new_user)
+
+    response_payload = build_auth_payload(new_user)
+    response_payload['message'] = 'User created successfully'
+    return jsonify(response_payload), 201
+
+@auth_bp.route('/login', methods=['POST'])
+def login():
+    data = request.get_json() or {}
+    email = (data.get('email') or '').strip().lower()
+    password = data.get('password') or ''
+
+    if not email or not password:
+        return jsonify({'message': 'Email and password are required'}), 400
+
+    user = User.query.filter_by(email=email).first()
+    if user and user.check_password(password):
+        if not user.password.startswith('$2'):
+            user.set_password(password)
+        user.last_login = datetime.utcnow()
+        db.session.commit()
+
+        response_payload = build_auth_payload(user)
+        response_payload['message'] = 'Login successful'
+        return jsonify(response_payload), 200
+
+    return jsonify({'message': 'Invalid credentials'}), 401
+
+# Product Routes
+@product_bp.route('/brands', methods=['GET'])
+def get_product_brands():
+    brands = Brand.query.order_by(Brand.name.asc()).all()
+    return jsonify(
+        {
+            'brands': [
+                {
+                    'id': brand.id,
+                    'name': brand.name
+                }
+                for brand in brands
+            ]
+        }
+    )
+
+
+@product_bp.route('/', methods=['GET'])
+def get_products():
+    role = get_optional_user_role(default='customer')
+    current_user_id = get_current_user_id() if role == 'admin' else None
+
+    search_term = (request.args.get('search') or '').strip()
+    brand_filter = (request.args.get('brand') or '').strip()
+    min_price = request.args.get('min_price', type=float)
+    max_price = request.args.get('max_price', type=float)
+    sort_by = (request.args.get('sort') or 'latest').strip().lower()
+    mine_only = role == 'admin' and request.args.get('mine', 'true').lower() != 'false'
+
+    query = Product.query.outerjoin(Brand)
+
+    if role == 'admin' and current_user_id and mine_only:
+        query = query.filter(Product.admin_id == current_user_id)
+    else:
+        query = query.filter(Product.expiry_status != 'expired')
+
+    if search_term:
+        search_expression = f'%{search_term}%'
+        query = query.filter(
+            or_(
+                Product.name.ilike(search_expression),
+                Brand.name.ilike(search_expression),
+            )
+        )
+
+    if brand_filter:
+        query = query.filter(Brand.name.ilike(brand_filter))
+
+    if min_price is not None:
+        query = query.filter(Product.price >= min_price)
+
+    if max_price is not None:
+        query = query.filter(Product.price <= max_price)
+
+    if sort_by in {'a-z', 'alpha', 'alphabetical'}:
+        query = query.order_by(Product.name.asc())
+    elif sort_by == 'price_asc':
+        query = query.order_by(Product.price.asc(), Product.name.asc())
+    elif sort_by == 'price_desc':
+        query = query.order_by(Product.price.desc(), Product.name.asc())
+    elif sort_by in {'popular', 'most_popular'}:
+        query = query.order_by(Product.no_of_orders.desc(), Product.name.asc())
+    else:
+        query = query.order_by(Product.date_added.desc(), Product.name.asc())
+
+    products = query.all()
+    return jsonify({'products': [serialize_product(product) for product in products]})
+
+@product_bp.route('/', methods=['POST'])
+def create_product():
+    if get_current_user_role() != 'admin':
+        return jsonify({'message': 'Unauthorized'}), 403
+
+    data = request.get_json() or {}
+    quantity = data.get('quantity', data.get('stock'))
+
+    if not data.get('name'):
+        return jsonify({'message': 'Product name is required'}), 400
+    if quantity is None:
+        return jsonify({'message': 'Product quantity is required'}), 400
+    if data.get('price') is None:
+        return jsonify({'message': 'Product price is required'}), 400
+
+    expiry_date = parse_expiry_date(data.get('expiry_date'))
+    if data.get('expiry_date') and not expiry_date:
+        return jsonify({'message': 'Invalid expiry_date format. Use YYYY-MM-DD'}), 400
+
+    brand = resolve_brand(data.get('brand') or data.get('brand_name'), data.get('brand_id'))
+    new_product = Product(
+        name=data['name'],
+        description=data.get('description'),
+        quantity=int(quantity),
+        price=float(data['price']),
+        expiry_date=expiry_date,
+        brand_id=brand.id,
+        image_path=data.get('image_path') or '/static/images/product-placeholder.svg',
+        admin_id=get_current_user_id()
+    )
+
+    check_expiry_status(new_product)
+    
+    db.session.add(new_product)
+    db.session.commit()
+    return jsonify({'message': 'Product created', 'product_id': new_product.id, 'product': serialize_product(new_product)}), 201
+
+@product_bp.route('/<int:product_id>', methods=['GET'])
+def get_product(product_id):
+    role = get_optional_user_role(default='customer')
+    product = Product.query.get_or_404(product_id)
+
+    if role == 'admin':
+        if product.admin_id != get_current_user_id():
+            return jsonify({'message': 'Product not found'}), 404
+    else:
+        check_expiry_status(product)
+        if product.expiry_status == 'expired':
+            return jsonify({'message': 'Product not found'}), 404
+
+    return jsonify({'product': serialize_product(product)})
 
 @product_bp.route('/<int:product_id>', methods=['PUT'])
 def update_product(product_id):
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     product = Product.query.get_or_404(product_id)
-    data = request.get_json()
+    if product.admin_id != get_current_user_id():
+        return jsonify({'message': 'Unauthorized'}), 403
+
+    data = request.get_json() or {}
     
     product.name = data.get('name', product.name)
     product.description = data.get('description', product.description)
-    product.quantity = data.get('quantity', product.quantity)
-    product.price = data.get('price', product.price)
+    product.quantity = int(data.get('quantity', data.get('stock', product.quantity)))
+    product.price = float(data.get('price', product.price))
+    if 'brand' in data or 'brand_name' in data or 'brand_id' in data:
+        brand = resolve_brand(
+            data.get('brand') or data.get('brand_name'),
+            data.get('brand_id')
+        )
+        product.brand_id = brand.id
+    if 'image_path' in data:
+        product.image_path = data.get('image_path') or '/static/images/product-placeholder.svg'
     if 'expiry_date' in data:
-        # Convert string to datetime object
         expiry_date_str = data['expiry_date']
         if expiry_date_str:
-            try:
-                product.expiry_date = datetime.fromisoformat(expiry_date_str)
-            except ValueError:
-                try:
-                    product.expiry_date = datetime.strptime(expiry_date_str, '%Y-%m-%d')
-                except ValueError:
-                    pass  # Keep as None if invalid
+            expiry_date = parse_expiry_date(expiry_date_str)
+            if not expiry_date:
+                return jsonify({'message': 'Invalid expiry_date format. Use YYYY-MM-DD'}), 400
+            product.expiry_date = expiry_date
         else:
             product.expiry_date = None
     
     check_expiry_status(product)
     
     db.session.commit()
-    return jsonify({'message': 'Product updated'})
+    return jsonify({'message': 'Product updated', 'product': serialize_product(product)})
 
 @product_bp.route('/<int:product_id>', methods=['DELETE'])
 def delete_product(product_id):
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     product = Product.query.get_or_404(product_id)
+    if product.admin_id != get_current_user_id():
+        return jsonify({'message': 'Unauthorized'}), 403
     
     # Delete related booking items first
     from backend.models import BookingItem, CartItem, Review
@@ -215,7 +386,7 @@ def delete_product(product_id):
 # Cart Routes
 @cart_bp.route('/', methods=['GET'])
 def get_cart():
-    user_id = request.headers.get('User-ID')  # Simplified
+    user_id = get_current_user_id()
     if not user_id:
         return jsonify({'message': 'User ID required'}), 400
     
@@ -241,7 +412,7 @@ def get_cart():
 
 @cart_bp.route('/add', methods=['POST'])
 def add_to_cart():
-    user_id = request.headers.get('User-ID')
+    user_id = get_current_user_id()
     if not user_id:
         return jsonify({'message': 'User ID required'}), 400
     
@@ -258,6 +429,14 @@ def add_to_cart():
         cart = Cart(user_id=user_id)
         db.session.add(cart)
         db.session.commit()
+
+    existing_seller_ids = {
+        item.product.admin_id
+        for item in cart.items
+        if item.product and item.product.admin_id is not None
+    }
+    if existing_seller_ids and product.admin_id not in existing_seller_ids:
+        return jsonify({'message': 'Please place orders from one seller at a time'}), 400
     
     # Check if product already in cart
     cart_item = CartItem.query.filter_by(cart_id=cart.id, product_id=product_id).first()
@@ -272,7 +451,7 @@ def add_to_cart():
 
 @cart_bp.route('/update/<int:cart_item_id>', methods=['PUT'])
 def update_cart_item(cart_item_id):
-    user_id = request.headers.get('User-ID')
+    user_id = get_current_user_id()
     if not user_id:
         return jsonify({'message': 'User ID required'}), 400
     
@@ -295,7 +474,7 @@ def update_cart_item(cart_item_id):
 
 @cart_bp.route('/remove/<int:cart_item_id>', methods=['DELETE'])
 def remove_from_cart(cart_item_id):
-    user_id = request.headers.get('User-ID')
+    user_id = get_current_user_id()
     if not user_id:
         return jsonify({'message': 'User ID required'}), 400
     
@@ -312,7 +491,7 @@ def remove_from_cart(cart_item_id):
 # Booking Routes
 @booking_bp.route('/', methods=['POST'])
 def create_booking():
-    user_id = request.headers.get('User-ID')
+    user_id = get_current_user_id()
     if not user_id:
         return jsonify({'message': 'User ID required'}), 400
     
@@ -336,6 +515,13 @@ def create_booking():
             'quantity': item.quantity,
             'price_at_purchase': product.price
         })
+
+    seller_ids = {
+        Product.query.get(item_data['product_id']).admin_id
+        for item_data in booking_items_data
+    }
+    if len(seller_ids) > 1:
+        return jsonify({'message': 'Please place orders from one seller at a time'}), 400
     
     # Convert delivery_date string to datetime object
     delivery_date = None
@@ -384,6 +570,7 @@ def create_booking():
     CartItem.query.filter_by(cart_id=cart.id).delete()
     
     db.session.commit()
+    send_order_confirmation_email(customer, new_booking)
     
     return jsonify({
         'message': 'Booking created successfully',
@@ -393,17 +580,22 @@ def create_booking():
 
 @booking_bp.route('/history', methods=['GET'])
 def get_booking_history():
-    user_id = request.headers.get('User-ID')
-    user_role = request.headers.get('Role')
+    user_id = get_current_user_id()
+    user_role = get_current_user_role()
     
     if not user_id:
         return jsonify({'message': 'User ID required'}), 400
     
-    # If admin, return all bookings from all customers
     if user_role == 'admin':
-        bookings = Booking.query.order_by(Booking.booking_date.desc()).all()
+        bookings = (
+            Booking.query.join(BookingItem, BookingItem.booking_id == Booking.id)
+            .join(Product, Product.id == BookingItem.product_id)
+            .filter(Product.admin_id == user_id)
+            .order_by(Booking.booking_date.desc())
+            .distinct()
+            .all()
+        )
     else:
-        # Regular customers only see their own orders
         bookings = Booking.query.filter_by(user_id=user_id).order_by(Booking.booking_date.desc()).all()
     
     output = []
@@ -429,21 +621,27 @@ def get_booking_history():
         items = []
         for item in booking.items:
             product = Product.query.get(item.product_id)
+            if user_role == 'admin' and product and product.admin_id != user_id:
+                continue
+
             item_data = {
-                'product_id': product.id,
+                'product_id': product.id if product else item.product_id,
                 'product_name': product.name if product else 'Unknown',
                 'quantity': item.quantity,
                 'price_at_purchase': item.price_at_purchase,
                 'total_price': item.price_at_purchase * item.quantity
             }
             items.append(item_data)
+
+        if user_role == 'admin' and not items:
+            continue
         
         booking_data = {
             'id': booking.id,
             'user_id': booking.user_id,
             'customer_name': customer_name,
             'booking_date': booking.booking_date.isoformat(),
-            'total_price': booking.total_price,
+            'total_price': sum(item['total_price'] for item in items),
             'delivery_address': address_data,
             'delivery_date': booking.delivery_date.isoformat() if booking.delivery_date else None,
             'mode_of_payment': booking.mode_of_payment,
@@ -454,10 +652,36 @@ def get_booking_history():
     
     return jsonify({'bookings': output})
 
+
+@admin_bp.route('/orders/<int:booking_id>/deliver', methods=['PUT'])
+def mark_order_delivered(booking_id):
+    if get_current_user_role() != 'admin':
+        return jsonify({'message': 'Unauthorized'}), 403
+
+    booking = Booking.query.get_or_404(booking_id)
+    admin_id = get_current_user_id()
+
+    if not booking_belongs_to_admin(booking, admin_id):
+        return jsonify({'message': 'Unauthorized'}), 403
+
+    if booking.status == 'delivered':
+        return jsonify({'message': 'Order already delivered'}), 400
+
+    booking.status = 'delivered'
+    if not booking.delivery_date:
+        booking.delivery_date = datetime.utcnow()
+    db.session.commit()
+
+    customer = User.query.get(booking.user_id)
+    if customer:
+        send_order_delivered_email(customer, booking)
+
+    return jsonify({'message': 'Order marked as delivered', 'booking_id': booking.id})
+
 # Review Routes
 @review_bp.route('/', methods=['POST'])
 def create_review():
-    user_id = request.headers.get('User-ID')
+    user_id = get_current_user_id()
     if not user_id:
         return jsonify({'message': 'User ID required'}), 400
     
@@ -520,7 +744,7 @@ def get_product_reviews(product_id):
 # Address Routes
 @address_bp.route('/', methods=['GET'])
 def get_addresses():
-    user_id = request.headers.get('User-ID')
+    user_id = get_current_user_id()
     if not user_id:
         return jsonify({'message': 'User ID required'}), 400
     
@@ -543,7 +767,7 @@ def get_addresses():
 
 @address_bp.route('/', methods=['POST'])
 def create_address():
-    user_id = request.headers.get('User-ID')
+    user_id = get_current_user_id()
     if not user_id:
         return jsonify({'message': 'User ID required'}), 400
     
@@ -569,7 +793,7 @@ def create_address():
 
 @address_bp.route('/<int:address_id>', methods=['PUT'])
 def update_address(address_id):
-    user_id = request.headers.get('User-ID')
+    user_id = get_current_user_id()
     if not user_id:
         return jsonify({'message': 'User ID required'}), 400
     
@@ -595,7 +819,7 @@ def update_address(address_id):
 
 @address_bp.route('/<int:address_id>', methods=['DELETE'])
 def delete_address(address_id):
-    user_id = request.headers.get('User-ID')
+    user_id = get_current_user_id()
     if not user_id:
         return jsonify({'message': 'User ID required'}), 400
     
@@ -607,31 +831,29 @@ def delete_address(address_id):
     db.session.commit()
     return jsonify({'message': 'Address deleted'})
 
-# Admin Routes (for dashboard, notifications, etc.)
-admin_bp = Blueprint('admin', __name__)
-
 @admin_bp.route('/dashboard/stats', methods=['GET'])
 def admin_dashboard_stats():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
-    
-    # Get stats for admin dashboard
-    total_products = Product.query.count()
-    total_users = User.query.count()
-    total_orders = Booking.query.count()
-    
-    # Expiring soon products (within 3 days)
+
+    admin_id = get_current_user_id()
+    product_ids = get_admin_product_ids(admin_id)
+    bookings = get_admin_bookings(admin_id)
+
+    total_products = len(product_ids)
+    total_users = len({booking.user_id for booking in bookings})
+    total_orders = len(bookings)
+
     soon = datetime.utcnow() + timedelta(days=3)
     expiring_soon = Product.query.filter(
+        Product.admin_id == admin_id,
         Product.expiry_date <= soon,
         Product.expiry_date >= datetime.utcnow(),
         Product.expiry_status != 'expired'
     ).count()
-    
-    expired_products = Product.query.filter_by(expiry_status='expired').count()
-    
-    # Low stock products (quantity < 10)
-    low_stock = Product.query.filter(Product.quantity < 10).count()
+
+    expired_products = Product.query.filter_by(admin_id=admin_id, expiry_status='expired').count()
+    low_stock = Product.query.filter(Product.admin_id == admin_id, Product.quantity < 10).count()
     
     return jsonify({
         'total_products': total_products,
@@ -644,12 +866,13 @@ def admin_dashboard_stats():
 
 @admin_bp.route('/products/expiring', methods=['GET'])
 def get_expiring_products():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
-    # Get products expiring within 3 days
+    admin_id = get_current_user_id()
     soon = datetime.utcnow() + timedelta(days=3)
     products = Product.query.filter(
+        Product.admin_id == admin_id,
         Product.expiry_date <= soon,
         Product.expiry_date >= datetime.utcnow()
     ).all()
@@ -669,10 +892,10 @@ def get_expiring_products():
 
 @admin_bp.route('/products/expired', methods=['GET'])
 def get_expired_products():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
-    products = Product.query.filter_by(expiry_status='expired').all()
+    products = Product.query.filter_by(admin_id=get_current_user_id(), expiry_status='expired').all()
     
     output = []
     for product in products:
@@ -688,39 +911,14 @@ def get_expired_products():
 
 @admin_bp.route('/customers/top', methods=['GET'])
 def get_top_customers():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
-    
-    # Get top customers by number of orders - using actual booking counts
-    # First get all users who have at least one booking
-    from sqlalchemy import func
-    
-    # Get user IDs with their order counts from bookings table
-    customer_orders = db.session.query(
-        Booking.user_id,
-        func.count(Booking.id).label('order_count'),
-        func.sum(Booking.total_price).label('total_spent')
-    ).group_by(Booking.user_id).order_by(func.count(Booking.id).desc()).limit(10).all()
-    
-    output = []
-    for user_id, order_count, total_spent in customer_orders:
-        user = User.query.get(user_id)
-        if user:
-            customer_data = {
-                'id': user.id,
-                'name': user.name,
-                'email': user.email,
-                'no_of_orders': order_count,
-                'total_spent': float(total_spent) if total_spent else 0
-            }
-            output.append(customer_data)
-    
-    return jsonify({'top_customers': output})
+    return jsonify({'top_customers': build_admin_top_customers(get_current_user_id())})
 
 # Automated Monthly Reports
 @admin_bp.route('/reports/monthly', methods=['GET'])
 def get_monthly_report():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     # Get month and year from query params, default to current month
@@ -740,11 +938,11 @@ def get_monthly_report():
     else:
         end_date = datetime(year, month + 1, 1)
     
-    # Get bookings for the month
-    bookings = Booking.query.filter(
-        Booking.booking_date >= start_date,
-        Booking.booking_date < end_date
-    ).all()
+    admin_id = get_current_user_id()
+    bookings = [
+        booking for booking in get_admin_bookings(admin_id)
+        if start_date <= booking.booking_date < end_date
+    ]
     
     # Calculate statistics
     total_sales = sum(booking.total_price for booking in bookings)
@@ -754,6 +952,8 @@ def get_monthly_report():
     product_sales = {}
     for booking in bookings:
         for item in booking.items:
+            if not item.product or item.product.admin_id != admin_id:
+                continue
             product_id = item.product_id
             if product_id not in product_sales:
                 product = Product.query.get(product_id)
@@ -815,10 +1015,31 @@ def get_monthly_report():
         'status_breakdown': status_breakdown
     })
 
+
+@admin_bp.route('/reports/monthly-sales', methods=['GET'])
+def get_monthly_sales_report():
+    if get_current_user_role() != 'admin':
+        return jsonify({'message': 'Unauthorized'}), 403
+    return jsonify({'monthly_sales': build_monthly_sales(get_current_user_id())})
+
+
+@admin_bp.route('/reports/daily-sales', methods=['GET'])
+def get_daily_sales_report():
+    if get_current_user_role() != 'admin':
+        return jsonify({'message': 'Unauthorized'}), 403
+    return jsonify({'daily_sales': build_daily_sales(get_current_user_id())})
+
+
+@admin_bp.route('/reports/summary', methods=['GET'])
+def get_sales_summary_report():
+    if get_current_user_role() != 'admin':
+        return jsonify({'message': 'Unauthorized'}), 403
+    return jsonify(build_sales_summary(get_current_user_id()))
+
 # Demand Forecasting (ML Integration)
 @admin_bp.route('/forecast/demand', methods=['GET'])
 def forecast_demand():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     # Get product ID and forecast period from query params
@@ -830,145 +1051,38 @@ def forecast_demand():
         return jsonify({'message': 'Product ID is required'}), 400
     
     product = Product.query.get(product_id)
-    if not product:
+    if not product or product.admin_id != get_current_user_id():
         return jsonify({'message': 'Product not found'}), 404
     
     if months_ahead < 1 or months_ahead > 12:
         return jsonify({'message': 'Forecast period must be between 1 and 12 months'}), 400
     
-    # Get historical sales data (last 24 months)
-    end_date = datetime.utcnow()
-    start_date = datetime(end_date.year - 2, end_date.month, 1)  # Approximately 2 years ago
-    
-    # Get all bookings in the historical period
-    historical_bookings = Booking.query.filter(
-        Booking.booking_date >= start_date,
-        Booking.booking_date <= end_date
-    ).all()
-    
-    # Extract monthly sales for the specific product
-    monthly_sales = {}  # {year_month: quantity}
-    
-    for booking in historical_bookings:
-        for item in booking.items:
-            if item.product_id == product_id:
-                year_month = booking.booking_date.strftime('%Y-%m')
-                if year_month not in monthly_sales:
-                    monthly_sales[year_month] = 0
-                monthly_sales[year_month] += item.quantity
-    
-    # Convert to sorted list of (date, quantity) tuples
-    sorted_months = sorted(monthly_sales.items())
-    
-    # If we don't have enough data, use simple average
-    if len(sorted_months) < 3:
-        # Calculate average monthly sales from available data
-        if sorted_months:
-            avg_sales = sum(quantity for _, quantity in sorted_months) / len(sorted_months)
-        else:
-            # No historical data, use a default based on current stock or other factors
-            avg_sales = max(1, product.quantity // 12)  # Assume we want to sell current stock over a year
-        
-        # Generate forecast
-        forecast_data = []
-        current_date = end_date
-        for i in range(months_ahead):
-            # Move to next month
-            if current_date.month == 12:
-                current_date = datetime(current_date.year + 1, 1, 1)
-            else:
-                current_date = datetime(current_date.year, current_date.month + 1, 1)
-            
-            forecast_data.append({
-                'month': current_date.month,
-                'year': current_date.year,
-                'predicted_quantity': round(avg_sales),
-                'confidence': 'low'  # Low confidence due to limited data
-            })
-        
-        return jsonify({
-            'product_id': product_id,
-            'product_name': product.name,
-            'forecast_period_months': months_ahead,
-            'historical_data_points': len(sorted_months),
-            'forecast': forecast_data,
-            'method': 'average_based_due_to_limited_data'
-        })
-    
-    # Simple linear regression forecast for demonstration
-    # In a real implementation, you would use proper ML models
-    quantities = [quantity for _, quantity in sorted_months]
-    
-    # Calculate simple trend (month-over-month growth)
-    if len(quantities) >= 2:
-        # Calculate average month-over-month change
-        changes = []
-        for i in range(1, len(quantities)):
-            if quantities[i-1] != 0:  # Avoid division by zero
-                change = (quantities[i] - quantities[i-1]) / quantities[i-1]
-                changes.append(change)
-        
-        avg_change = sum(changes) / len(changes) if changes else 0
-        
-        # Apply trend to forecast
-        last_quantity = quantities[-1]
-        forecast_data = []
-        current_date = end_date
-        
-        for i in range(months_ahead):
-            # Move to next month
-            if current_date.month == 12:
-                current_date = datetime(current_date.year + 1, 1, 1)
-            else:
-                current_date = datetime(current_date.year, current_date.month + 1, 1)
-            
-            # Apply trend with damping (reduce effect over time)
-            damping_factor = 1 - (i * 0.1)  # Reduce trend effect by 10% each month
-            predicted_quantity = last_quantity * (1 + avg_change * damping_factor)
-            predicted_quantity = max(0, round(predicted_quantity))  # Ensure non-negative
-            
-            forecast_data.append({
-                'month': current_date.month,
-                'year': current_date.year,
-                'predicted_quantity': predicted_quantity,
-                'confidence': 'medium' if i < 3 else 'low'  # Confidence decreases over time
-            })
-            
-            # Update last_quantity for next iteration
-            last_quantity = predicted_quantity
-    else:
-        # Fallback to average if we can't calculate trend
-        avg_sales = sum(quantities) / len(quantities)
-        forecast_data = []
-        current_date = end_date
-        
-        for i in range(months_ahead):
-            # Move to next month
-            if current_date.month == 12:
-                current_date = datetime(current_date.year + 1, 1, 1)
-            else:
-                current_date = datetime(current_date.year, current_date.month + 1, 1)
-            
-            forecast_data.append({
-                'month': current_date.month,
-                'year': current_date.year,
-                'predicted_quantity': round(avg_sales),
-                'confidence': 'low'
-            })
-    
-    return jsonify({
-        'product_id': product_id,
-        'product_name': product.name,
-        'forecast_period_months': months_ahead,
-        'historical_data_points': len(sorted_months),
-        'forecast': forecast_data,
-        'method': 'simple_linear_trend'
-    })
+    return jsonify(
+        build_demand_forecast(product, get_admin_bookings(get_current_user_id()), months_ahead)
+    )
+
+
+@admin_bp.route('/forecast-demand/<int:product_id>', methods=['GET'])
+def forecast_demand_by_product(product_id):
+    if get_current_user_role() != 'admin':
+        return jsonify({'message': 'Unauthorized'}), 403
+
+    product = Product.query.get(product_id)
+    if not product or product.admin_id != get_current_user_id():
+        return jsonify({'message': 'Product not found'}), 404
+
+    months_ahead = request.args.get('months_ahead', 3, type=int)
+    if months_ahead < 1 or months_ahead > 12:
+        return jsonify({'message': 'Forecast period must be between 1 and 12 months'}), 400
+
+    return jsonify(
+        build_demand_forecast(product, get_admin_bookings(get_current_user_id()), months_ahead)
+    )
 
 # Intelligent Recommendation System
 @admin_bp.route('/recommendations/push-expiry', methods=['GET'])
 def recommend_push_expiry():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     # Get products that are expiring soon (within 7 days) and have sufficient stock
@@ -999,7 +1113,7 @@ def recommend_push_expiry():
 
 @admin_bp.route('/recommendations/high-demand', methods=['GET'])
 def recommend_high_demand():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     # Get products with high demand based on recent sales (last 30 days)
@@ -1047,7 +1161,7 @@ def recommend_high_demand():
 # Customer Credit Score Dashboard
 @admin_bp.route('/customers/credit-scores', methods=['GET'])
 def get_customer_credit_scores():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     # Update total_spent for all customers from their existing bookings
@@ -1088,7 +1202,7 @@ def get_customer_credit_scores():
 
 @admin_bp.route('/customers/<int:customer_id>/credit-score', methods=['PUT'])
 def update_customer_credit_score(customer_id):
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     customer = User.query.get_or_404(customer_id)
@@ -1109,7 +1223,7 @@ def update_customer_credit_score(customer_id):
 # Pending Payment Tracking
 @admin_bp.route('/payments/pending', methods=['GET'])
 def get_pending_payments():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     # Get all bookings with status pending or confirmed (not delivered/cancelled)
@@ -1152,7 +1266,7 @@ def get_pending_payments():
 
 @admin_bp.route('/payments/record', methods=['POST'])
 def record_payment():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     data = request.get_json()
@@ -1196,7 +1310,7 @@ def record_payment():
     return jsonify({'message': 'Payment recorded successfully'})
 @admin_bp.route('/customers/top-by-spending', methods=['GET'])
 def get_top_customers_by_spending():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     # Get top customers by total spent
@@ -1218,7 +1332,7 @@ def get_top_customers_by_spending():
 # Offer & Discount Notifications
 @admin_bp.route('/offers', methods=['GET'])
 def get_offers():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     offers = Offer.query.all()
@@ -1246,7 +1360,7 @@ def get_offers():
 
 @admin_bp.route('/offers', methods=['POST'])
 def create_offer():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     data = request.get_json()
@@ -1307,7 +1421,7 @@ def create_offer():
 
 @admin_bp.route('/offers/<int:offer_id>', methods=['PUT'])
 def update_offer(offer_id):
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     offer = Offer.query.get_or_404(offer_id)
@@ -1364,7 +1478,7 @@ def update_offer(offer_id):
 
 @admin_bp.route('/offers/<int:offer_id>', methods=['DELETE'])
 def delete_offer(offer_id):
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     offer = Offer.query.get_or_404(offer_id)
@@ -1375,7 +1489,7 @@ def delete_offer(offer_id):
 
 @admin_bp.route('/offers/send-notifications', methods=['POST'])
 def send_offer_notifications():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     data = request.get_json()
@@ -1445,7 +1559,7 @@ def send_offer_notifications():
 
 @booking_bp.route('/notifications/offers', methods=['GET'])
 def get_offer_notifications():
-    user_id = request.headers.get('User-ID')
+    user_id = get_current_user_id()
     if not user_id:
         return jsonify({'message': 'User ID required'}), 400
     
@@ -1484,7 +1598,7 @@ def get_offer_notifications():
 
 @booking_bp.route('/notifications/offers/<int:notification_id>/read', methods=['PUT'])
 def mark_offer_notification_as_read(notification_id):
-    user_id = request.headers.get('User-ID')
+    user_id = get_current_user_id()
     if not user_id:
         return jsonify({'message': 'User ID required'}), 400
     
@@ -1501,7 +1615,7 @@ def mark_offer_notification_as_read(notification_id):
 # Review Monitoring & Analysis (Admin)
 @admin_bp.route('/reviews', methods=['GET'])
 def get_all_reviews():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     # Get all reviews with pagination
@@ -1537,7 +1651,7 @@ def get_all_reviews():
 
 @admin_bp.route('/reviews/product/<int:product_id>', methods=['GET'])
 def get_product_reviews_for_analysis(product_id):
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     product = Product.query.get_or_404(product_id)
@@ -1585,7 +1699,7 @@ def get_product_reviews_for_analysis(product_id):
 
 @admin_bp.route('/reviews/summary', methods=['GET'])
 def get_reviews_summary():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     # Get overall review statistics
@@ -1664,7 +1778,7 @@ def get_reviews_summary():
 # Real-time Purchase Notifications
 @booking_bp.route('/notifications', methods=['POST'])
 def create_notification():
-    user_id = request.headers.get('User-ID')
+    user_id = get_current_user_id()
     if not user_id:
         return jsonify({'message': 'User ID required'}), 400
     
@@ -1700,7 +1814,7 @@ def create_notification():
 
 @booking_bp.route('/notifications', methods=['GET'])
 def get_notifications():
-    user_id = request.headers.get('User-ID')
+    user_id = get_current_user_id()
     if not user_id:
         return jsonify({'message': 'User ID required'}), 400
     
@@ -1729,7 +1843,7 @@ def get_notifications():
 
 @booking_bp.route('/notifications/<int:notification_id>/read', methods=['PUT'])
 def mark_notification_as_read(notification_id):
-    user_id = request.headers.get('User-ID')
+    user_id = get_current_user_id()
     if not user_id:
         return jsonify({'message': 'User ID required'}), 400
     
@@ -1745,7 +1859,7 @@ def mark_notification_as_read(notification_id):
 # Manual Sales Entry
 @admin_bp.route('/sales/manual', methods=['POST'])
 def manual_sales_entry():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     data = request.get_json()
@@ -1831,7 +1945,7 @@ def manual_sales_entry():
 # Excel Upload for Sales
 @admin_bp.route('/sales/upload-excel', methods=['POST'])
 def upload_excel_sales():
-    if request.headers.get('Role') != 'admin':
+    if get_current_user_role() != 'admin':
         return jsonify({'message': 'Unauthorized'}), 403
     
     if 'file' not in request.files:

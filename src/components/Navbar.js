@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { getDashboardPath } from '../utils/auth';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
@@ -18,7 +19,7 @@ const Navbar = () => {
   return (
     <nav className="navbar">
       <div className="navbar-brand">
-        <Link to={isAdmin ? "/admin/dashboard" : "/customer/dashboard"}>
+        <Link to={getDashboardPath(user.role)}>
           AgriFlow
         </Link>
       </div>

@@ -4,6 +4,7 @@ from backend.app import create_app
 from backend.models import (
     db,
     User,
+    Brand,
     Product,
     Cart,
     CartItem,
@@ -18,10 +19,14 @@ from datetime import datetime, timedelta
 
 @pytest.fixture
 def app():
-    app = create_app()
-    app.config["TESTING"] = True
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
-    app.config["WTF_CSRF_ENABLED"] = False
+    app = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+            "WTF_CSRF_ENABLED": False,
+            "JWT_SECRET_KEY": "test-jwt-secret-key-that-is-at-least-32-bytes",
+        }
+    )
 
     with app.app_context():
         db.create_all()
@@ -40,46 +45,74 @@ def auth_headers():
     return {"Content-Type": "application/json"}
 
 
+def login_and_get_token(client, auth_headers, email, password):
+    response = client.post(
+        "/api/auth/login",
+        data=json.dumps({"email": email, "password": password}),
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    return data["access_token"]
+
+
 @pytest.fixture
-def admin_user(app):
+def admin_user(app, client, auth_headers):
     with app.app_context():
         user = User(
             name="Admin User",
             email="admin@agriflow.com",
-            password="admin123",
             role="admin",
         )
+        user.set_password("admin123")
         db.session.add(user)
         db.session.commit()
-        return {"User-ID": str(user.id), "Role": "admin"}
+        user_id = user.id
+
+    token = login_and_get_token(client, auth_headers, "admin@agriflow.com", "admin123")
+    return {"Authorization": f"Bearer {token}", "X-User-ID": str(user_id)}
 
 
 @pytest.fixture
-def customer_user(app):
+def customer_user(app, client, auth_headers):
     with app.app_context():
         user = User(
             name="Test Customer",
             email="customer@agriflow.com",
-            password="customer123",
             role="customer",
         )
+        user.set_password("customer123")
         db.session.add(user)
         db.session.commit()
         cart = Cart(user_id=user.id)
         db.session.add(cart)
         db.session.commit()
-        return {"User-ID": str(user.id), "Role": "customer"}
+        user_id = user.id
+
+    token = login_and_get_token(
+        client, auth_headers, "customer@agriflow.com", "customer123"
+    )
+    return {"Authorization": f"Bearer {token}", "X-User-ID": str(user_id)}
 
 
 @pytest.fixture
 def sample_product(app, admin_user):
     with app.app_context():
+        brand = Brand.query.filter_by(name="Harvest Hill").first()
+        if not brand:
+            brand = Brand(name="Harvest Hill")
+            db.session.add(brand)
+            db.session.flush()
+
         product = Product(
             name="Organic Tomatoes",
             description="Fresh organic tomatoes",
             quantity=100,
             price=50.0,
             expiry_date=datetime.utcnow() + timedelta(days=30),
+            brand_id=brand.id,
+            admin_id=int(admin_user["X-User-ID"]),
+            image_path="/static/images/product-placeholder.svg",
         )
         db.session.add(product)
         db.session.commit()
@@ -106,6 +139,7 @@ class TestRegisterAPI:
         assert response.status_code == 201
         data = json.loads(response.data)
         assert "user_id" in data
+        assert "access_token" in data
         assert data["message"] == "User created successfully"
 
     def test_register_duplicate_email(self, client, auth_headers):
@@ -147,6 +181,7 @@ class TestLoginAPI:
         data = json.loads(response.data)
         assert data["message"] == "Login successful"
         assert "user_id" in data
+        assert "access_token" in data
         assert data["role"] == "customer"
 
     def test_login_invalid_credentials(self, client, auth_headers):
@@ -168,22 +203,70 @@ class TestGetProductsAPI:
 
     def test_get_products_customer(self, client, auth_headers, sample_product):
         """Test getting products as customer (should exclude expired)"""
-        response = client.get(
-            "/api/products/", headers={**auth_headers, "Role": "customer"}
-        )
+        response = client.get("/api/products/", headers=auth_headers)
         assert response.status_code == 200
         data = json.loads(response.data)
         assert "products" in data
         assert len(data["products"]) > 0
 
-    def test_get_products_admin(self, client, auth_headers, sample_product):
+    def test_get_products_admin(self, client, auth_headers, sample_product, admin_user):
         """Test getting all products as admin"""
         response = client.get(
-            "/api/products/", headers={**auth_headers, "Role": "admin"}
+            "/api/products/", headers={**auth_headers, **admin_user}
         )
         assert response.status_code == 200
         data = json.loads(response.data)
         assert "products" in data
+        assert data["products"][0]["seller_id"] == int(admin_user["X-User-ID"])
+
+    def test_get_products_admin_shows_only_owned_products(
+        self, client, auth_headers, sample_product, admin_user, app
+    ):
+        with app.app_context():
+            other_admin = User(
+                name="Second Admin",
+                email="other-admin@agriflow.com",
+                role="admin",
+            )
+            other_admin.set_password("admin123")
+            db.session.add(other_admin)
+            db.session.flush()
+
+            other_brand = Brand.query.filter_by(name="Other Brand").first()
+            if not other_brand:
+                other_brand = Brand(name="Other Brand")
+                db.session.add(other_brand)
+                db.session.flush()
+
+            product = Product(
+                name="Other Seller Product",
+                description="Belongs to someone else",
+                quantity=20,
+                price=75.0,
+                brand_id=other_brand.id,
+                admin_id=other_admin.id,
+            )
+            db.session.add(product)
+            db.session.commit()
+
+        response = client.get("/api/products/", headers={**auth_headers, **admin_user})
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        product_names = {product["name"] for product in data["products"]}
+        assert "Organic Tomatoes" in product_names
+        assert "Other Seller Product" not in product_names
+
+    def test_get_products_supports_search_and_brand_filter(
+        self, client, auth_headers, sample_product
+    ):
+        response = client.get(
+            "/api/products/?search=Harvest&brand=Harvest Hill&sort=popular",
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert len(data["products"]) == 1
+        assert data["products"][0]["brand"] == "Harvest Hill"
 
 
 class TestCreateProductAPI:
@@ -323,7 +406,7 @@ class TestUpdateCartItemAPI:
         self, client, auth_headers, customer_user, sample_product, app
     ):
         with app.app_context():
-            cart = Cart.query.filter_by(user_id=int(customer_user["User-ID"])).first()
+            cart = Cart.query.filter_by(user_id=int(customer_user["X-User-ID"])).first()
             cart_item = CartItem(cart_id=cart.id, product_id=sample_product, quantity=1)
             db.session.add(cart_item)
             db.session.commit()
@@ -345,7 +428,7 @@ class TestRemoveCartItemAPI:
         self, client, auth_headers, customer_user, sample_product, app
     ):
         with app.app_context():
-            cart = Cart.query.filter_by(user_id=int(customer_user["User-ID"])).first()
+            cart = Cart.query.filter_by(user_id=int(customer_user["X-User-ID"])).first()
             cart_item = CartItem(cart_id=cart.id, product_id=sample_product, quantity=1)
             db.session.add(cart_item)
             db.session.commit()
@@ -550,6 +633,18 @@ class TestDemandForecastAPI:
         )
         assert response.status_code == 400
 
+    def test_forecast_alias_by_product_id(
+        self, client, auth_headers, admin_user, sample_product
+    ):
+        response = client.get(
+            f"/api/admin/forecast-demand/{sample_product}?months_ahead=3",
+            headers={**auth_headers, **admin_user},
+        )
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["product_id"] == sample_product
+        assert "forecast" in data
+
 
 class TestCreditScoreAPI:
     """Test cases for Credit Score APIs"""
@@ -582,6 +677,54 @@ class TestCreditScoreAPI:
             headers={**auth_headers, **admin_user},
         )
         assert response.status_code == 200
+
+
+class TestOrderDeliveryAPI:
+    def test_admin_can_mark_owned_order_delivered(
+        self, client, auth_headers, admin_user, customer_user, sample_product, app
+    ):
+        with app.app_context():
+            address = Address(
+                user_id=int(customer_user["X-User-ID"]),
+                address_line_1="123 Delivery Lane",
+                city="Pune",
+                state="Maharashtra",
+                pin_code="411001",
+            )
+            db.session.add(address)
+            db.session.flush()
+
+            booking = Booking(
+                user_id=int(customer_user["X-User-ID"]),
+                total_price=150.0,
+                delivery_address_id=address.id,
+                mode_of_payment="Cash",
+                status="pending",
+            )
+            db.session.add(booking)
+            db.session.flush()
+
+            booking_item = BookingItem(
+                booking_id=booking.id,
+                product_id=sample_product,
+                quantity=3,
+                price_at_purchase=50.0,
+            )
+            db.session.add(booking_item)
+            db.session.commit()
+            booking_id = booking.id
+
+        response = client.put(
+            f"/api/admin/orders/{booking_id}/deliver",
+            headers={**auth_headers, **admin_user},
+        )
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["message"] == "Order marked as delivered"
+
+        with app.app_context():
+            booking = Booking.query.get(booking_id)
+            assert booking.status == "delivered"
 
 
 # ==================== REVIEW ANALYTICS API TESTS ====================

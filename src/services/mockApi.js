@@ -28,6 +28,12 @@ let nextOrderId = 203;
 let nextCartItemId = 4;
 let nextAddressId = 4;
 
+const createMockError = (message) => {
+  const error = new Error(message);
+  error.response = { data: { message } };
+  return error;
+};
+
 // Helper to get user from headers
 const getUserFromHeaders = (headers) => {
   const userId = headers['user-id'];
@@ -44,7 +50,7 @@ export const mockAuthAPI = {
     const user = mockUsers.find(u => u.email === email && u.password === password);
     console.log('Found user:', user);
     if (!user) {
-      throw { response: { data: { message: 'Invalid credentials' } } };
+      throw createMockError('Invalid credentials');
     }
     return {
       data: {
@@ -61,7 +67,7 @@ export const mockAuthAPI = {
     await simulateDelay(300);
     const existingUser = mockUsers.find(u => u.email === userData.email);
     if (existingUser) {
-      throw { response: { data: { message: 'Email already registered' } } };
+      throw createMockError('Email already registered');
     }
     return { data: { message: 'Registration successful! Please login.' } };
   }
@@ -83,7 +89,7 @@ export const mockProductsAPI = {
     await simulateDelay(200);
     const product = products.find(p => p.id === parseInt(id));
     if (!product) {
-      throw { response: { data: { message: 'Product not found' } } };
+      throw createMockError('Product not found');
     }
     return { data: { product: { ...product, expiry_status: calculateExpiryStatus(product.expiry_date) } } };
   },
@@ -103,7 +109,7 @@ export const mockProductsAPI = {
     await simulateDelay(300);
     const index = products.findIndex(p => p.id === parseInt(id));
     if (index === -1) {
-      throw { response: { data: { message: 'Product not found' } } };
+      throw createMockError('Product not found');
     }
     products[index] = {
       ...products[index],
@@ -117,7 +123,7 @@ export const mockProductsAPI = {
     await simulateDelay(300);
     const index = products.findIndex(p => p.id === parseInt(id));
     if (index === -1) {
-      throw { response: { data: { message: 'Product not found' } } };
+      throw createMockError('Product not found');
     }
     products.splice(index, 1);
     return { data: { message: 'Product deleted successfully' } };
@@ -139,7 +145,7 @@ export const mockCartAPI = {
     const { id } = getUserFromHeaders(headers);
     const product = products.find(p => p.id === parseInt(productId));
     if (!product) {
-      throw { response: { data: { message: 'Product not found' } } };
+      throw createMockError('Product not found');
     }
     
     if (!cartItems[id]) {
@@ -171,7 +177,7 @@ export const mockCartAPI = {
     const item = userCart.find(i => i.cart_item_id === parseInt(cartItemId));
     
     if (!item) {
-      throw { response: { data: { message: 'Item not found in cart' } } };
+      throw createMockError('Item not found in cart');
     }
     
     if (quantity <= 0) {
@@ -193,7 +199,7 @@ export const mockCartAPI = {
     const index = userCart.findIndex(i => i.cart_item_id === parseInt(cartItemId));
     
     if (index === -1) {
-      throw { response: { data: { message: 'Item not found in cart' } } };
+      throw createMockError('Item not found in cart');
     }
     
     userCart.splice(index, 1);
@@ -225,7 +231,7 @@ export const mockBookingsAPI = {
     const userAddresses = addresses[id] || [];
     
     if (userCart.length === 0) {
-      throw { response: { data: { message: 'Cart is empty' } } };
+      throw createMockError('Cart is empty');
     }
     
     const selectedAddress = userAddresses.find(a => a.id === parseInt(bookingData.delivery_address_id));
@@ -313,7 +319,7 @@ export const mockAddressesAPI = {
     const index = userAddresses.findIndex(a => a.id === parseInt(addressId));
     
     if (index === -1) {
-      throw { response: { data: { message: 'Address not found' } } };
+      throw createMockError('Address not found');
     }
     
     // If setting as default, unset other defaults
@@ -332,7 +338,7 @@ export const mockAddressesAPI = {
     const index = userAddresses.findIndex(a => a.id === parseInt(addressId));
     
     if (index === -1) {
-      throw { response: { data: { message: 'Address not found' } } };
+      throw createMockError('Address not found');
     }
     
     userAddresses.splice(index, 1);
@@ -394,7 +400,7 @@ export const mockAdminAPI = {
     await simulateDelay(500);
     const product = products.find(p => p.id === parseInt(productId));
     if (!product) {
-      throw { response: { data: { message: 'Product not found' } } };
+      throw createMockError('Product not found');
     }
     return { data: { ...mockForecastData, product_name: product.name } };
   },
@@ -551,13 +557,7 @@ export const createMockAxios = () => {
       }
       
       // If no match, throw error with proper axios format
-      throw {
-        response: {
-          data: {
-            message: `Mock API not implemented for: ${url}`
-          }
-        }
-      };
+      throw createMockError(`Mock API not implemented for: ${url}`);
     },
     
     put: async (url, data = {}, config = {}) => {
@@ -583,7 +583,7 @@ export const createMockAxios = () => {
         return mockProductsAPI.update(productId, data, headers);
       }
       
-      throw { response: { data: { message: `Mock PUT not implemented for: ${url}` } } };
+      throw createMockError(`Mock PUT not implemented for: ${url}`);
     },
     
     delete: async (url, config = {}) => {
@@ -609,7 +609,7 @@ export const createMockAxios = () => {
         return mockAddressesAPI.delete(addressId, headers);
       }
       
-      throw { response: { data: { message: `Mock DELETE not implemented for: ${url}` } } };
+      throw createMockError(`Mock DELETE not implemented for: ${url}`);
     }
   };
 };
