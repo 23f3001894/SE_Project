@@ -1,8 +1,14 @@
+from pathlib import Path
+import sys
+
 from flask import Flask
 from flask_cors import CORS
 from sqlalchemy import inspect, text
 
-from backend.auth import jwt
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from backend.auth.extensions import jwt
 from backend.auth.extensions import bcrypt
 from backend.config import Config
 from backend.models import Brand, db
