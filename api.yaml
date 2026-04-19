@@ -1,0 +1,38 @@
+openapi: 3.0.0
+info:
+  title: AgriFlow API
+  version: 2.0.0
+
+paths:
+  /api/auth/register:
+    post:
+      summary: Register user
+      responses:
+        "201":
+          description: User created
+        "400":
+          description: Error
+
+  /api/auth/login:
+    post:
+      summary: Login user
+      responses:
+        "200":
+          description: Success
+        "401":
+          description: Invalid credentials
+
+  /api/products/:
+    get:
+      summary: Get products
+      responses:
+        "200":
+          description: Product list
+
+    post:
+      summary: Create product
+      responses:
+        "201":
+          description: Created
+        "403":
+          description: Unauthorized
